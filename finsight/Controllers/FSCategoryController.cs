@@ -26,7 +26,7 @@ namespace Finsight.Controller
         public IAsyncEnumerable<FSCategoryModel> GetCategoriesAsync()
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
-            return categoryRepository.GetAllAsync(userId);
+            return categoryRepository.FetchAsync(userId);
         }
     }
 }

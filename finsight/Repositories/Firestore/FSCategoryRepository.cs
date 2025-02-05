@@ -1,7 +1,6 @@
 using Finsight.Models;
 using Finsight.Utilities;
 using Google.Cloud.Firestore;
-using System.Threading.Tasks;
 using Finsight.Interface;
 
 namespace Finsight.Repositories
@@ -13,7 +12,7 @@ namespace Finsight.Repositories
         {
             this.firestore = firestore;
         }
-        public async IAsyncEnumerable<FSCategoryModel> GetAllAsync(string userId)
+        public async IAsyncEnumerable<FSCategoryModel> FetchAsync(string userId)
         {
             var snapshot = await firestore.Collection(CONSTANTS.USER_COLLECTION).Document(userId).Collection(CONSTANTS.SUBCATEGPRIES_COLLECTION).GetSnapshotAsync();
             List<FSSubCategoryModel> subCategories = [];

@@ -20,6 +20,7 @@ builder.Services.AddSingleton<FirestoreDb>((provider) =>
     return FirestoreDb.Create("finsight-f8c69");
 });
 builder.Services.AddScoped<FSICategoryRepository, FSCategoryRepository>();
+builder.Services.AddScoped<FSITransactionRepository, FSTransactionRepository>();
 builder.Services.AddControllers().AddNewtonsoftJson();
 
 var app = builder.Build();

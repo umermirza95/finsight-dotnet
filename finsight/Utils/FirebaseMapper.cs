@@ -18,6 +18,10 @@ namespace Finsight.Utilities
                 if (document.ContainsField(firestoreFieldName) && property.CanWrite)
                 {
                     var value = document.GetValue<object>(firestoreFieldName);
+                    if (value is Timestamp firestoreTimestamp)
+                    {
+                        value = firestoreTimestamp.ToDateTime();
+                    }
                     if (property.PropertyType.IsEnum && value is string stringValue)
                     {
                         if (Enum.TryParse(property.PropertyType, stringValue, true, out var enumValue))
