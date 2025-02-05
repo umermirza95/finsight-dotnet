@@ -40,14 +40,20 @@ namespace Finsight.Models
         public string CategoryId { get; set; } = string.Empty;
         public string Comment { get; set; } = string.Empty;
         public string? SubCategoryId { get; set; }
-        [JsonConverter(typeof(StringEnumConverter))]
-        public FSSupportedCurrencies Currency { get; set; }
         public DateTime Date { get; set; }
         public DateTime UpdatedAt { get; set; }
+
         [JsonConverter(typeof(StringEnumConverter))]
-        public FSTransactionType Type;
+        public FSTransactionType Type {get; set;}
+
         [JsonConverter(typeof(StringEnumConverter))]
         public FSTransactionSubType? SubType;
+
+        [JsonConverter(typeof(StringEnumConverter))]
+        public FSTransactionMode Mode {get; set;}
+
+        [JsonConverter(typeof(StringEnumConverter))]
+        public FSSupportedCurrencies Currency { get; set; }
 
     }
 }

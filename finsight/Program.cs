@@ -19,10 +19,18 @@ builder.Services.AddSingleton<FirestoreDb>((provider) =>
 {
     return FirestoreDb.Create("finsight-f8c69");
 });
+builder.Services.AddCors(options =>
+    {
+        options.AddDefaultPolicy(builder =>
+            builder.AllowAnyOrigin()
+                   .AllowAnyMethod()
+                   .AllowAnyHeader());
+    });
 builder.Services.AddScoped<FSICategoryRepository, FSCategoryRepository>();
 builder.Services.AddScoped<FSITransactionRepository, FSTransactionRepository>();
 builder.Services.AddControllers().AddNewtonsoftJson();
 
 var app = builder.Build();
+app.UseCors();
 app.MapControllers();
 app.Run();
