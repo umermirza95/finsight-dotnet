@@ -1,5 +1,6 @@
 using Finsight.Interface;
 using Finsight.Repositories;
+using Finsight.Service;
 using FirebaseAdmin;
 using Google.Apis.Auth.OAuth2;
 using Google.Cloud.Firestore;
@@ -28,6 +29,7 @@ builder.Services.AddCors(options =>
     });
 builder.Services.AddScoped<FSICategoryRepository, FSCategoryRepository>();
 builder.Services.AddScoped<FSITransactionRepository, FSTransactionRepository>();
+builder.Services.AddScoped<FSCurrencyConverter>();
 builder.Services.AddControllers().AddNewtonsoftJson();
 
 var app = builder.Build();

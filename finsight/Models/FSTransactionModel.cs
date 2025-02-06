@@ -38,19 +38,19 @@ namespace Finsight.Models
         public float Amount { get; set; }
         public float BaseAmount { get; set; }
         public string CategoryId { get; set; } = string.Empty;
-        public string Comment { get; set; } = string.Empty;
+        public string? Comment { get; set; }
         public string? SubCategoryId { get; set; }
         public DateTime Date { get; set; }
         public DateTime UpdatedAt { get; set; }
 
         [JsonConverter(typeof(StringEnumConverter))]
-        public FSTransactionType Type {get; set;}
+        public FSTransactionType Type { get; set; }
 
         [JsonConverter(typeof(StringEnumConverter))]
-        public FSTransactionSubType? SubType;
+        public FSTransactionSubType? SubType { get; set; }
 
         [JsonConverter(typeof(StringEnumConverter))]
-        public FSTransactionMode Mode {get; set;}
+        public FSTransactionMode Mode { get; set; }
 
         [JsonConverter(typeof(StringEnumConverter))]
         public FSSupportedCurrencies Currency { get; set; }
