@@ -36,7 +36,8 @@ namespace Finsight.Repositories
             await firestore.Collection(CONSTANTS.USER_COLLECTION)
             .Document(userId)
             .Collection(CONSTANTS.TRANSACTION_COLLECTION)
-            .AddAsync(transaction);
+            .Document(transaction.Id)
+            .SetAsync(transaction);
         }
     }
 }

@@ -22,9 +22,12 @@ namespace Finsight.Utilities
                     {
                         value = firestoreTimestamp.ToDateTime();
                     }
-                    if (property.PropertyType.IsEnum && value is string stringValue)
+                    Type propertyType = property.PropertyType;
+                    Type? underlyingType = Nullable.GetUnderlyingType(propertyType);
+                    if ((propertyType.IsEnum || (underlyingType != null && underlyingType.IsEnum)) && value is string stringValue)
                     {
-                        if (Enum.TryParse(property.PropertyType, stringValue, true, out var enumValue))
+                        Type enumType = underlyingType ?? propertyType; // Handle both nullable and non-nullable enums
+                        if (Enum.TryParse(enumType, stringValue, true, out var enumValue))
                         {
                             property.SetValue(model, enumValue);
                         }
