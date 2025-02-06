@@ -15,15 +15,10 @@ namespace Finsight.Controller
     [ApiController]
     [Authorize]
     [Route("api/transaction")]
-    public class FSTransactionController : ControllerBase
+    public class FSTransactionController(FSTransactionService transactionService, FSITransactionRepository transactionRepository) : ControllerBase
     {
-        readonly FSTransactionService transactionService;
-        readonly FSTransactionRepository transactionRepository;
-        public FSTransactionController(FSTransactionService transactionService, FSTransactionRepository transactionRepository)
-        {
-            this.transactionService = transactionService;
-            this.transactionRepository = transactionRepository;
-        }
+        readonly FSTransactionService transactionService = transactionService;
+        readonly FSITransactionRepository transactionRepository = transactionRepository;
 
         [HttpGet]
         [ProducesResponseType(StatusCodes.Status200OK)]
@@ -42,7 +37,7 @@ namespace Finsight.Controller
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
             var transaction = await transactionService.CreateTransactionAsync(userId, command);
-            return CreatedAtAction("transaction", transaction);
+            return CreatedAtAction("CreateTransaction", transaction);
         }
     }
 }

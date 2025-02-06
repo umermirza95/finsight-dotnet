@@ -41,7 +41,7 @@ namespace Finsight.Service
                 UpdatedAt = DateTime.Now,
                 Type = category.Type
             };
-            await transactionRepository.AddAsync(userId, transaction);
+            //await transactionRepository.AddAsync(userId, transaction);
             return transaction;
         }
     }

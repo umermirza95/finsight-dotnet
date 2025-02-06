@@ -29,7 +29,9 @@ builder.Services.AddCors(options =>
     });
 builder.Services.AddScoped<FSICategoryRepository, FSCategoryRepository>();
 builder.Services.AddScoped<FSITransactionRepository, FSTransactionRepository>();
+builder.Services.AddScoped<FSTransactionService>();
 builder.Services.AddScoped<FSCurrencyConverter>();
+builder.Services.AddHttpClient();
 builder.Services.AddControllers().AddNewtonsoftJson();
 
 var app = builder.Build();
