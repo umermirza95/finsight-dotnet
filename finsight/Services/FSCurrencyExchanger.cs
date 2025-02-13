@@ -1,19 +1,17 @@
 using Finsight.Command;
+using Finsight.Interface;
 using Finsight.Models;
 using Google.Cloud.Firestore;
 using Newtonsoft.Json;
 
 namespace Finsight.Service
 {
-    public class FSCurrencyConverter
+    public class FSCurrencyConverter(FirestoreDb firestore, IHttpClientFactory httpClientFactory, FSISecretsProvider secretsProvider)
     {
-        readonly FirestoreDb firestore;
-        private readonly IHttpClientFactory httpClientFactory;
-        public FSCurrencyConverter(FirestoreDb firestore, IHttpClientFactory httpClientFactory)
-        {
-            this.firestore = firestore;
-            this.httpClientFactory = httpClientFactory;
-        }
+        readonly FirestoreDb firestore = firestore;
+        private readonly IHttpClientFactory httpClientFactory = httpClientFactory;
+        private readonly FSISecretsProvider secretsProvider = secretsProvider;
+
         public async Task<float> ConvertToUSD(FSCreateTransactionCommand command)
         {
             if (!command.Currency.HasValue || command.Currency == FSSupportedCurrencies.USD)
@@ -44,7 +42,7 @@ namespace Finsight.Service
                 return 1;
             }
             var client = httpClientFactory.CreateClient();
-            string apiKey = Environment.GetEnvironmentVariable("WISE_API_KEY") ?? throw new Exception("WISE api key is missing");
+            string apiKey = await secretsProvider.GetSecretAsync("WISE_API_KEY");
             client.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
             var response = await client.GetAsync($"{CONSTANTS.WISE_FX_URL}/rates?source=${from}&target=USD&time=${date:O}");
             if (!response.IsSuccessStatusCode)

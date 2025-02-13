@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 
 
+
 FirebaseApp.Create(new AppOptions()
 {
     Credential = GoogleCredential.FromFile("serviceAccount.json")
@@ -21,6 +22,7 @@ builder.Services.AddAuthentication("firebase")
 {
     options.LoginPath = "/login";
 });
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddAuthorizationBuilder()
 .AddPolicy("RequireAuthenticatedUser", policy => policy.RequireAuthenticatedUser().AddAuthenticationSchemes(CookieAuthenticationDefaults.AuthenticationScheme))
 .AddPolicy("FirebaseIdToken", policy => policy.RequireAuthenticatedUser().AddAuthenticationSchemes("firebase"));

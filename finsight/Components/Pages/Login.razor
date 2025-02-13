@@ -1,4 +1,8 @@
 @page "/login"
+@inject IHttpClientFactory HttpClientFactory;
+@inject FSISecretsProvider SecretsProvider;
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
 
 <h3>Login</h3>
 
@@ -17,4 +21,3 @@
 
     <button type="submit" class="btn btn-primary">Login</button>
 </EditForm>
-
