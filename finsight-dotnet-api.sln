@@ -5,6 +5,8 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "finsight", "finsight\finsight.csproj", "{F5D4C89E-4501-4204-A836-CAC48406BDD1}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlazorApp1", "..\..\Blazor\BlazorApp1\BlazorApp1.csproj", "{C662556E-0F16-4139-8842-7FC60A9C2D0E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -18,5 +20,9 @@ Global
 		{F5D4C89E-4501-4204-A836-CAC48406BDD1}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F5D4C89E-4501-4204-A836-CAC48406BDD1}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F5D4C89E-4501-4204-A836-CAC48406BDD1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C662556E-0F16-4139-8842-7FC60A9C2D0E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C662556E-0F16-4139-8842-7FC60A9C2D0E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C662556E-0F16-4139-8842-7FC60A9C2D0E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C662556E-0F16-4139-8842-7FC60A9C2D0E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

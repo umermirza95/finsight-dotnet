@@ -1,0 +1,20 @@
+@page "/login"
+
+<h3>Login</h3>
+
+<EditForm Enhance Model="loginModel" OnValidSubmit="HandleLogin" FormName="login">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+    <div>
+        <label>Email:</label>
+        <InputText @bind-Value="loginModel.Email" class="form-control" />
+    </div>
+
+    <div>
+        <label>Password:</label>
+        <InputText @bind-Value="loginModel.Password" Type="password" class="form-control" />
+    </div>
+
+    <button type="submit" class="btn btn-primary">Login</button>
+</EditForm>
+

@@ -11,7 +11,7 @@ using System.Security.Claims;
 namespace Finsight.Controller
 {
     [ApiController]
-    [Authorize]
+    [Authorize(Policy = "FirebaseIdToken")]
     [Route("api/category")]
     public class FSCategoryController : ControllerBase
     {
