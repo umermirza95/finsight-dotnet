@@ -5,6 +5,9 @@ using Finsight.Interface;
 using Finsight.Query;
 using Finsight.Command;
 using Finsight.Service;
+using Newtonsoft.Json;
+using System.Text.Json;
+using Newtonsoft.Json.Serialization;
 
 namespace Finsight.Repositories
 {
@@ -37,7 +40,7 @@ namespace Finsight.Repositories
             .Document(userId)
             .Collection(CONSTANTS.TRANSACTION_COLLECTION)
             .Document(transaction.Id)
-            .SetAsync(transaction);
+            .SetAsync(FirestoreMapper.ToDictionary<FSTransactionModel>((transaction)));
         }
     }
 }

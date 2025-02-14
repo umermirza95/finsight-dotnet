@@ -1,4 +1,6 @@
 using Google.Cloud.Firestore;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,6 +10,27 @@ namespace Finsight.Utilities
 {
     public static class FirestoreMapper
     {
+
+        public static Dictionary<string, object> ToDictionary<T>(T obj)
+        {
+            var settings = new JsonSerializerSettings
+            {
+                ContractResolver = new CamelCasePropertyNamesContractResolver(),
+                NullValueHandling = NullValueHandling.Ignore // Ignore null values
+            };
+            var jsonString = JsonConvert.SerializeObject(obj, settings);
+            var dictionary = JsonConvert.DeserializeObject<Dictionary<string, object>>(jsonString) ?? throw new Exception("Firestore deserialization failed");
+            foreach (var key in dictionary.Keys.ToList())
+            {
+                if (dictionary[key] is DateTime dateTime)
+                {
+                    dictionary[key] = Timestamp.FromDateTime(DateTime.SpecifyKind(dateTime, DateTimeKind.Utc));
+                }
+            }
+            return dictionary;
+        }
+
+
         public static T MapTo<T>(DocumentSnapshot document) where T : new()
         {
             var model = new T();
