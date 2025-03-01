@@ -21,7 +21,7 @@ namespace Finsight.Service
             DateTime date = command.Date ?? DateTime.Now;
             if (command.UseLiveFx == true)
             {
-                float fxRate = await FetchLiveFXRate(command.Currency.GetValueOrDefault(FSSupportedCurrencies.USD), FSSupportedCurrencies.USD, date);
+                double fxRate = await FetchLiveFXRate(command.Currency.GetValueOrDefault(FSSupportedCurrencies.USD), FSSupportedCurrencies.USD, date);
                 return (float)Math.Round((command.Amount * fxRate), 2);
             }
             var documentId = $"{date.Year}{date.Month}";
@@ -35,7 +35,7 @@ namespace Finsight.Service
             return (float)Math.Round(converted, 2);
         }
 
-        public async Task<float> FetchLiveFXRate(FSSupportedCurrencies from, FSSupportedCurrencies to, DateTime date)
+        public async Task<double> FetchLiveFXRate(FSSupportedCurrencies from, FSSupportedCurrencies to, DateTime date)
         {
             if (from == to)
             {
@@ -44,15 +44,16 @@ namespace Finsight.Service
             var client = httpClientFactory.CreateClient();
             string apiKey = await secretsProvider.GetSecretAsync("WISE_API_KEY");
             client.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
-            var response = await client.GetAsync($"{CONSTANTS.WISE_FX_URL}/rates?source=${from}&target=USD&time=${date:O}");
+            string url = $"{CONSTANTS.WISE_FX_URL}/rates?source={from}&target=USD&time={date:O}";
+            var response = await client.GetAsync(url);
+            var jsonString = await response.Content.ReadAsStringAsync();
             if (!response.IsSuccessStatusCode)
             {
-                throw new Exception($"Failed to acquire live FX rate for {from}");
+                throw new Exception(jsonString);
             }
-            var jsonString = await response.Content.ReadAsStringAsync();
             var list = JsonConvert.DeserializeObject<List<Dictionary<string, object>>>(jsonString);
-            object? rate = (list?.ElementAt(0)?.TryGetValue("rate", out rate)) ?? throw new Exception($"Failed to acquire live FX rate for {from}");
-            return (float)rate;
+            var rate = list?[0]["rate"] ?? throw new Exception($"Failed to acquire live FX rate for {from}");
+            return (double)rate;
         }
     }
 }

@@ -22,7 +22,7 @@ namespace Finsight.Service
         public async Task<FSTransactionModel> CreateTransactionAsync(string userId, FSCreateTransactionCommand command)
         {
             var category = await categoryRepository.GetByIdAsync(userId, command.CategoryId);
-            if (!string.IsNullOrEmpty(command.SubCategoryId) && category.SubCategories?.Find(sc => sc.CategoryId == command.SubCategoryId) == null)
+            if (!string.IsNullOrEmpty(command.SubCategoryId) && category.SubCategories?.Find(sc => sc.CategoryId == command.CategoryId) == null)
             {
                 throw new Exception($"Sub category id {command.SubCategoryId} does not belong to provided category ${category.Id}");
             }
