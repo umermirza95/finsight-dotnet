@@ -6,6 +6,6 @@ namespace Finsight.Models
 {
     public class FSUser: IdentityUser
     {
-        
+     
     }
 }

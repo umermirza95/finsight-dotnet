@@ -1,3 +1,5 @@
+using Finsight.Commands;
+using Finsight.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Finsight.Controller
@@ -6,10 +8,27 @@ namespace Finsight.Controller
     [Route("api/[controller]")]
     public class AuthController : ControllerBase
     {
-        [HttpPost("register")]
-        public async Task<IActionResult> Register()
+
+        private readonly IFSUserService _userService;
+
+
+        public AuthController(IFSUserService userService)
         {
-            return Ok(new { Message = "User registered successfully!" });
+            _userService = userService;
+        }
+
+        [HttpPost("register")]
+        public async Task<IActionResult> Register([FromBody] CreateFSUserCommand command)
+        {
+            try
+            {
+                var user = await _userService.SignUp(command);
+                return Ok(user);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
     }
 }
