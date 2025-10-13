@@ -19,12 +19,4 @@ namespace Finsight.Enums
         transfer,
         online
     }
-
-    public enum FSCurrency
-    {
-        PKR,
-        USD,
-        AED,
-        EUR
-    }
 }

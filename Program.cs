@@ -13,6 +13,7 @@ builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(builder
 builder.Services.AddIdentity<FSUser, IdentityRole>().AddEntityFrameworkStores<AppDbContext>().AddDefaultTokenProviders();
 builder.Services.AddScoped<IFSUserService, FSUserService>();
 builder.Services.AddScoped<ICategoryService, FSCategoryService>();
+builder.Services.AddScoped<ITransactionService, FSTransactionService>();
 
 
 builder.Services.AddAuthentication()

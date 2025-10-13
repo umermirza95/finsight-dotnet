@@ -24,8 +24,8 @@ namespace Finsight.Controller
         [HttpGet("")]
         public async Task<IActionResult> GetCategories()
         {
-            var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            var categories = await _categoryService.GetCategoriesAsync(Guid.Parse(userIdString ?? "" ));
+            var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var categories = await _categoryService.GetCategoriesAsync(userIdString);
             var categoryDtos = categories.Select(c => new FSCategoryDTO
             {
                 Id = c.Id,

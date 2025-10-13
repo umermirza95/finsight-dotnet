@@ -1,4 +1,5 @@
 using Finsight.Models;
+using Finsight.Services;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,21 +19,43 @@ public class AppDbContext : IdentityDbContext<FSUser>
             .Property(c => c.Type)
             .HasConversion<string>();
 
-        modelBuilder.Entity<FSTransaction>()
-                 .Property(t => t.Type)
-                 .HasConversion<string>();
+        modelBuilder.Entity<FSCategory>()
+            .HasOne<FSUser>()
+            .WithMany()
+            .HasForeignKey(t => t.FSUserId)
+            .OnDelete(DeleteBehavior.Restrict);
 
-        modelBuilder.Entity<FSTransaction>()
-            .Property(t => t.SubType)
-            .HasConversion<string>();
 
-        modelBuilder.Entity<FSTransaction>()
-            .Property(t => t.Mode)
-            .HasConversion<string>();
+        modelBuilder.Entity<FSTransaction>(entity =>
+        {
+            entity
+                .HasOne<FSUser>()
+                .WithMany()
+                .HasForeignKey(t => t.FSUserId)
+                .OnDelete(DeleteBehavior.Restrict);
 
-        modelBuilder.Entity<FSTransaction>()
-            .Property(t => t.Currency)
-            .HasConversion<string>();
+            entity
+                .HasOne<FSCategory>()
+                .WithMany()
+                .HasForeignKey(t => t.FSCategoryId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity
+                .HasOne<FSSubCategory>()
+                .WithMany()
+                .HasForeignKey(t => t.FSSubCategoryId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity
+               .HasOne<FSCurrency>()
+               .WithMany()
+               .HasForeignKey(t => t.FSCurrencyCode)
+               .OnDelete(DeleteBehavior.Restrict);
+
+            entity.Property(t => t.Type).HasConversion<string>();
+            entity.Property(t => t.SubType).HasConversion<string>();
+            entity.Property(t => t.Mode).HasConversion<string>();
+        });
 
         modelBuilder.Entity<FSUser>()
                .HasIndex(u => u.Email)

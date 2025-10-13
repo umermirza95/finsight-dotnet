@@ -5,6 +5,6 @@ namespace Finsight.Interfaces
 {
     public interface ICategoryService
     {
-        public Task<List<FSCategory>> GetCategoriesAsync(Guid userId);
+        public Task<List<FSCategory>> GetCategoriesAsync(string userId);
     }    
 }

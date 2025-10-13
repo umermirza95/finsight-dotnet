@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -10,9 +11,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace finsight_dotnet.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251013111439_transaction1")]
+    partial class transaction1
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -27,9 +30,8 @@ namespace finsight_dotnet.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("FSUserId")
-                        .IsRequired()
-                        .HasColumnType("text");
+                    b.Property<Guid>("FSUserId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -41,19 +43,7 @@ namespace finsight_dotnet.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("FSUserId");
-
                     b.ToTable("Categories");
-                });
-
-            modelBuilder.Entity("Finsight.Models.FSCurrency", b =>
-                {
-                    b.Property<string>("Code")
-                        .HasColumnType("text");
-
-                    b.HasKey("Code");
-
-                    b.ToTable("FSCurrency");
                 });
 
             modelBuilder.Entity("Finsight.Models.FSSubCategory", b =>
@@ -89,15 +79,15 @@ namespace finsight_dotnet.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<DateTime>("Date")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("FSCategoryId")
                         .HasColumnType("uuid");
-
-                    b.Property<string>("FSCurrencyCode")
-                        .IsRequired()
-                        .HasColumnType("text");
 
                     b.Property<Guid?>("FSSubCategoryId")
                         .HasColumnType("uuid");
@@ -123,8 +113,6 @@ namespace finsight_dotnet.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("FSCategoryId");
-
-                    b.HasIndex("FSCurrencyCode");
 
                     b.HasIndex("FSSubCategoryId");
 
@@ -332,15 +320,6 @@ namespace finsight_dotnet.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
-            modelBuilder.Entity("Finsight.Models.FSCategory", b =>
-                {
-                    b.HasOne("Finsight.Models.FSUser", null)
-                        .WithMany()
-                        .HasForeignKey("FSUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("Finsight.Models.FSSubCategory", b =>
                 {
                     b.HasOne("Finsight.Models.FSCategory", null)
@@ -355,12 +334,6 @@ namespace finsight_dotnet.Migrations
                     b.HasOne("Finsight.Models.FSCategory", null)
                         .WithMany()
                         .HasForeignKey("FSCategoryId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Finsight.Models.FSCurrency", null)
-                        .WithMany()
-                        .HasForeignKey("FSCurrencyCode")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 

@@ -12,7 +12,7 @@ namespace Finsight.Models
         public Guid Id { get; set; }
 
         [ForeignKey(nameof(FSUser))]
-        public Guid FSUserId { get; set; }
+        public required string FSUserId { get; set; } 
 
         [Required]
         public string Name { get; set; } = string.Empty;

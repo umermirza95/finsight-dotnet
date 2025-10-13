@@ -14,7 +14,7 @@ namespace Finsight.Services
             _context = context;
         }
 
-        public async Task<List<FSCategory>> GetCategoriesAsync(Guid userId)
+        public async Task<List<FSCategory>> GetCategoriesAsync(string userId)
         {
             return await _context.Categories
                         .Where(c => c.FSUserId == userId)
