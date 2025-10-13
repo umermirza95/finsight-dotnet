@@ -9,35 +9,27 @@ namespace Finsight.Models
     public class FSTransaction
     {
         [Key]
-        public Guid Id { get; set; }
+        public required Guid Id { get; set; }
 
         [ForeignKey(nameof(FSUser))]
-        [Required]
-        public string FSUserId { get; set; } = string.Empty;
+        public required string FSUserId { get; set; } 
 
-        [Required]
         [Column(TypeName = "decimal(18,2)")]
-        public decimal Amount { get; set; }
+        public required decimal Amount { get; set; }
 
-        [Required]
         [ForeignKey(nameof(FSCategory))]
-        public Guid FSCategoryId { get; set; }
+        public required Guid FSCategoryId { get; set; }
 
-        [Required]
-        public FSTransactionMode Mode { get; set; }
+        public required FSTransactionMode Mode { get; set; }
 
-        [Required]
-        public DateTime Date { get; set; }
+        public required DateTime Date { get; set; }
 
-        [Required]
-        public DateTime UpdatedAt { get; set; }
+        public required DateTime UpdatedAt { get; set; }
 
         [ForeignKey(nameof(FSCurrency))]
-        [Required]
         public required string FSCurrencyCode { get; set; }
 
-        [Required]
-        public FSTransactionType Type { get; set; }
+        public required FSTransactionType Type { get; set; }
 
         [ForeignKey(nameof(FSSubCategory))]
         public Guid? FSSubCategoryId { get; set; }

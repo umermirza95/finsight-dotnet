@@ -5,14 +5,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Finsight.Services
 {
-    public class FSCategoryService : ICategoryService
+    public class FSCategoryService(AppDbContext context) : ICategoryService
     {
-        private readonly AppDbContext _context;
-
-        public FSCategoryService(AppDbContext context)
-        {
-            _context = context;
-        }
+        private readonly AppDbContext _context = context;
 
         public async Task<List<FSCategory>> GetCategoriesAsync(string userId)
         {

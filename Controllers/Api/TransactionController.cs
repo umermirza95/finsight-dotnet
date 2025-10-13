@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Finsight.Commands;
 using Finsight.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -20,8 +21,12 @@ namespace Finsight.Controller
         [HttpPost]
         public async Task<IActionResult> AddTransactionAsync([FromBody] CreateTransactionCommand command)
         {
-          
-            return Ok();
+            var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var transaction = await _transactionService.AddTransactionAsync(command, userIdString);
+            return Ok( new
+            {
+                data = transaction
+            });
         }
     }
 }

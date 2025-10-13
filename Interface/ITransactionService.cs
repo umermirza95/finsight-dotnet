@@ -5,6 +5,6 @@ namespace Finsight.Interfaces
 {
     public interface ITransactionService
     {
-        public Task<FSTransaction> AddTransaction(CreateTransactionCommand command);
+        public Task<FSTransaction> AddTransactionAsync(CreateTransactionCommand command, string userId);
     }    
 }
