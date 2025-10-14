@@ -23,7 +23,7 @@ namespace Finsight.Controller
         {
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
             var transaction = await _transactionService.AddTransactionAsync(command, userIdString);
-            return Ok( new
+            return CreatedAtAction( nameof(AddTransactionAsync), new
             {
                 data = transaction
             });

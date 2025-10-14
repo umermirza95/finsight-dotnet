@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -10,9 +11,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace finsight_dotnet.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251014113336_defaultcurrency")]
+    partial class defaultcurrency
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -54,38 +57,6 @@ namespace finsight_dotnet.Migrations
                     b.HasKey("Code");
 
                     b.ToTable("FSCurrency");
-                });
-
-            modelBuilder.Entity("Finsight.Models.FSExchangeRate", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateOnly>("Date")
-                        .HasColumnType("date");
-
-                    b.Property<double>("ExchangeRate")
-                        .HasColumnType("double precision");
-
-                    b.Property<string>("From")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("To")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("To");
-
-                    b.HasIndex("From", "To", "Date")
-                        .IsUnique();
-
-                    b.ToTable("FSExchangeRates");
                 });
 
             modelBuilder.Entity("Finsight.Models.FSSubCategory", b =>
@@ -376,23 +347,6 @@ namespace finsight_dotnet.Migrations
                         .HasForeignKey("FSUserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
-                });
-
-            modelBuilder.Entity("Finsight.Models.FSExchangeRate", b =>
-                {
-                    b.HasOne("Finsight.Models.FSCurrency", null)
-                        .WithMany()
-                        .HasForeignKey("From")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("FK_FSExchangeRate_FromCurrency");
-
-                    b.HasOne("Finsight.Models.FSCurrency", null)
-                        .WithMany()
-                        .HasForeignKey("To")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("FK_FSExchangeRate_ToCurrency");
                 });
 
             modelBuilder.Entity("Finsight.Models.FSSubCategory", b =>

@@ -8,8 +8,8 @@ public class AppDbContext : IdentityDbContext<FSUser>
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
     public DbSet<FSCategory> Categories { get; set; }
     public DbSet<FSSubCategory> SubCategories { get; set; }
-
     public DbSet<FSTransaction> Transactions { get; set; }
+    public DbSet<FSExchangeRate> FSExchangeRates { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -57,8 +57,36 @@ public class AppDbContext : IdentityDbContext<FSUser>
             entity.Property(t => t.Mode).HasConversion<string>();
         });
 
-        modelBuilder.Entity<FSUser>()
-               .HasIndex(u => u.Email)
-               .IsUnique();
+        modelBuilder.Entity<FSUser>(entity =>
+        {
+            entity.HasIndex(u => u.Email).IsUnique();
+            entity
+              .HasOne<FSCurrency>()
+              .WithMany()
+              .HasForeignKey(u => u.DefaultCurrency)
+              .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<FSExchangeRate>(entity =>
+        {
+            entity
+              .HasOne<FSCurrency>()
+              .WithMany()
+              .HasForeignKey(fx => fx.From)
+              .HasConstraintName("FK_FSExchangeRate_FromCurrency")
+              .OnDelete(DeleteBehavior.Restrict);
+
+            entity
+             .HasOne<FSCurrency>()
+             .WithMany()
+             .HasForeignKey(fx => fx.To)
+             .HasConstraintName("FK_FSExchangeRate_ToCurrency")
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<FSExchangeRate>()
+       .HasIndex(e => new { e.From, e.To, e.Date })
+       .IsUnique();
+
     }
 }
