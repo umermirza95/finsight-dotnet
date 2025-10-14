@@ -1,6 +1,7 @@
 using Finsight.Commands;
 using Finsight.Interfaces;
 using Finsight.Models;
+using Finsight.Queries;
 using Microsoft.EntityFrameworkCore;
 
 namespace Finsight.Services
@@ -9,6 +10,27 @@ namespace Finsight.Services
     {
         private readonly AppDbContext _context = context;
         private readonly IExchangeRateService exchangeRateService = fxService;
+
+        public async Task<IEnumerable<FSTransaction>> GetTransactionsAsync(GetTransactionsQuery query, string userId)
+        {
+            var q = _context.Transactions
+            .Where(t => t.FSUserId == userId)
+            .Where(t => t.Date >= query.StartDate && t.Date <= query.EndDate);
+
+            if (query.Type != null)
+                q = q.Where(t => t.Type == query.Type);
+
+            if (query.CategoryId != null)
+                q = q.Where(t => t.FSCategoryId == query.CategoryId);
+
+            var result = await q
+                .OrderByDescending(t => t.Date)
+                .ToListAsync();
+
+            return result;
+        }
+
+
         public async Task<FSTransaction> AddTransactionAsync(CreateTransactionCommand command, string userId)
         {
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
@@ -23,7 +45,12 @@ namespace Finsight.Services
                     fx.To == defaultCurrency.Code &&
                     fx.Date == exchangeDate
                 );
-                exchangeRate ??= await exchangeRateService.GetExchangeRateAsync(transactionCurrency, defaultCurrency, exchangeDate);
+                if (exchangeRate == null)
+                {
+                    exchangeRate = await exchangeRateService.GetExchangeRateAsync(transactionCurrency, defaultCurrency, exchangeDate);
+                    _context.FSExchangeRates.Add(exchangeRate);
+                }
+
             }
             var transaction = new FSTransaction
             {

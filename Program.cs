@@ -15,7 +15,7 @@ builder.Services.AddIdentity<FSUser, IdentityRole>().AddEntityFrameworkStores<Ap
 builder.Services.AddScoped<IFSUserService, FSUserService>();
 builder.Services.AddScoped<ICategoryService, FSCategoryService>();
 builder.Services.AddScoped<ITransactionService, FSTransactionService>();
-builder.Services.AddHttpClient<IExchangeRateService>();
+builder.Services.AddHttpClient<IExchangeRateService, FSExchangeRateService>();
 
 
 builder.Services.AddAuthentication()
