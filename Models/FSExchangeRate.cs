@@ -9,7 +9,7 @@ namespace Finsight.Models
         public int Id { get; set; }
         public required string From { get; set; }
         public required string To { get; set; }
-        public required double ExchangeRate { get; set; }
+        public required decimal ExchangeRate { get; set; }
 
         public required DateOnly Date { get; set; }
     }

@@ -10,7 +10,7 @@ namespace Finsight.Controller
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(AuthenticationSchemes = "JwtBearer")]
+    //[Authorize(AuthenticationSchemes = "JwtBearer")]
     public class CategoryController : ControllerBase
     {
         private readonly ICategoryService _categoryService;
@@ -24,7 +24,7 @@ namespace Finsight.Controller
         [HttpGet("")]
         public async Task<IActionResult> GetCategories()
         {
-            var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userIdString = "b2819fa8-5207-4dff-ab65-7ac14a42663b"; // User.FindFirstValue(ClaimTypes.NameIdentifier)!;
             var categories = await _categoryService.GetCategoriesAsync(userIdString);
             var categoryDtos = categories.Select(c => new FSCategoryDTO
             {
@@ -39,7 +39,7 @@ namespace Finsight.Controller
             }).ToList();
             return Ok(new
             {
-                data = categoryDtos
+                data = new { categories = categoryDtos}
             });
            
         }

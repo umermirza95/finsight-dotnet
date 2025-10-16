@@ -1,4 +1,5 @@
 using Finsight.Commands;
+using Finsight.DTOs;
 using Finsight.Interfaces;
 using Finsight.Models;
 using Finsight.Queries;
@@ -11,11 +12,50 @@ namespace Finsight.Services
         private readonly AppDbContext _context = context;
         private readonly IExchangeRateService exchangeRateService = fxService;
 
+        public async Task<IEnumerable<FSTransactionDTO>> GetTransactionsInDefaultCurrencyAsync(GetTransactionsQuery query, string userId)
+        {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
+            var fxRates = new Dictionary<string, decimal>();
+            var defaultCurrency = user?.DefaultCurrency ?? "USD";
+            var transactionDTOs = (await GetTransactionsAsync(query, userId)).Select(t => new FSTransactionDTO
+            {
+                Amount = t.Amount,
+                BaseAmount = t.Amount,
+                Comment = t.Comment,
+                Date = t.Date,
+                CategoryId = t.FSCategoryId,
+                Currency = t.FSCurrencyCode,
+                SubCategoryId = t.FSSubCategoryId,
+                Id = t.Id,
+                Mode = t.Mode,
+                SubType = t.SubType,
+                Type = t.Type
+            }).ToList();
+            foreach (var transaction in transactionDTOs)
+            {
+                if (transaction.Currency != defaultCurrency)
+                {
+                    DateOnly transactionDate = DateOnly.FromDateTime(transaction.Date);
+                    string key = FSHelpers.GetFXKey(transaction.Currency, defaultCurrency, transactionDate);
+                    decimal rate = fxRates.GetValueOrDefault(key);
+                    if (rate <= 0)
+                    {
+                        rate = (await exchangeRateService.GetExchangeRateAsync(new FSCurrency { Code = transaction.Currency }, new FSCurrency { Code = defaultCurrency }, DateOnly.FromDateTime(transaction.Date))).ExchangeRate;
+                        fxRates.Add(key, rate);
+                    }
+                    transaction.Amount *= rate;
+                }
+            }
+            return transactionDTOs;
+        }
+
         public async Task<IEnumerable<FSTransaction>> GetTransactionsAsync(GetTransactionsQuery query, string userId)
         {
+            var startDate = query.From?.ToUniversalTime();
+            var endDate = query.To?.ToUniversalTime();
             var q = _context.Transactions
             .Where(t => t.FSUserId == userId)
-            .Where(t => t.Date >= query.StartDate && t.Date <= query.EndDate);
+            .Where(t => t.Date >= startDate && t.Date <= endDate);
 
             if (query.Type != null)
                 q = q.Where(t => t.Type == query.Type);
@@ -30,8 +70,7 @@ namespace Finsight.Services
             return result;
         }
 
-
-        public async Task<FSTransaction> AddTransactionAsync(CreateTransactionCommand command, string userId)
+        public async Task<FSTransaction> AddTransactionWithFXAsync(CreateTransactionCommand command, string userId)
         {
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
             DateTime transactionDate = command.Date ?? DateTime.UtcNow;
@@ -40,18 +79,14 @@ namespace Finsight.Services
             DateOnly exchangeDate = DateOnly.FromDateTime(transactionDate);
             if (command.Currency != defaultCurrency.Code)
             {
-                FSExchangeRate? exchangeRate = await _context.FSExchangeRates.FirstOrDefaultAsync(
-                    fx => fx.From == command.Currency &&
-                    fx.To == defaultCurrency.Code &&
-                    fx.Date == exchangeDate
-                );
-                if (exchangeRate == null)
-                {
-                    exchangeRate = await exchangeRateService.GetExchangeRateAsync(transactionCurrency, defaultCurrency, exchangeDate);
-                    _context.FSExchangeRates.Add(exchangeRate);
-                }
-
+                await exchangeRateService.GetExchangeRateAsync(transactionCurrency, defaultCurrency, exchangeDate);
             }
+            return await AddTransactionAsync(command, userId);
+        }
+
+
+        public async Task<FSTransaction> AddTransactionAsync(CreateTransactionCommand command, string userId)
+        {
             var transaction = new FSTransaction
             {
                 Id = Guid.NewGuid(),
