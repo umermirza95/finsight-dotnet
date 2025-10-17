@@ -22,7 +22,7 @@ namespace Finsight.Models
 
         public required FSTransactionMode Mode { get; set; }
 
-        public required DateTime Date { get; set; }
+        public required DateOnly Date { get; set; }
 
         public required DateTime UpdatedAt { get; set; }
 

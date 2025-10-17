@@ -12,6 +12,18 @@ namespace Finsight.Services
         private readonly HttpClient _httpClient = httpClient;
         private readonly IConfiguration _config = configuration;
         private readonly AppDbContext _context = context;
+
+        private Dictionary<string, decimal> cachedExchangeRates = [];
+
+        public async void LoadAllExchangeRates()
+        {
+            var currencies = await _context.FSExchangeRates.ToListAsync();
+            foreach (var currency in currencies)
+            {
+                cachedExchangeRates.Add(FSHelpers.GetFXKey(currency), currency.ExchangeRate);
+            }
+        }
+
         public async Task<FSExchangeRate> GetExchangeRateAsync(FSCurrency from, FSCurrency to, DateOnly date)
         {
             FSExchangeRate? exchangeRate = await _context.FSExchangeRates.FirstOrDefaultAsync(

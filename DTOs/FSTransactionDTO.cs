@@ -16,7 +16,7 @@ namespace Finsight.DTOs
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public  FSTransactionMode Mode { get; set; }
 
-        public  DateTime Date { get; set; }
+        public  DateOnly Date { get; set; }
 
         public string Currency { get; set; } = string.Empty;
 

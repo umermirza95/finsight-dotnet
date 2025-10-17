@@ -11,7 +11,7 @@ namespace Finsight.Commands
         public Guid? SubCategoryId { get; set; }
         public required string Currency { get; set; }
         public string? Comment { get; set; }
-        public DateTime? Date { get; set; }
+        public DateOnly? Date { get; set; }
         public required FSTransactionType Type { get; set; }
         public FSTransactionSubType? SubType { get; set; }
         public required FSTransactionMode Mode { get; set; }

@@ -5,8 +5,8 @@ namespace Finsight.Queries
 {
     public class GetTransactionsQuery
     {
-        public DateTime? From { get; set; }
-        public DateTime? To { get; set; }
+        public DateOnly? From { get; set; }
+        public DateOnly? To { get; set; }
         public FSTransactionType? Type { get; set; } // "income" or "expense"
         public Guid? CategoryId { get; set; }
 
@@ -18,8 +18,8 @@ namespace Finsight.Queries
                 var startOfMonth = new DateTime(now.Year, now.Month, 1);
                 var endOfMonth = startOfMonth.AddMonths(1).AddDays(-1);
 
-                From ??= startOfMonth;
-                To ??= endOfMonth;
+                From ??= DateOnly.FromDateTime(startOfMonth);
+                To ??= DateOnly.FromDateTime(endOfMonth);
             }
         }
     }

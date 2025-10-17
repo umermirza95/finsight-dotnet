@@ -15,44 +15,71 @@ namespace Finsight.Services
         public async Task<IEnumerable<FSTransactionDTO>> GetTransactionsInDefaultCurrencyAsync(GetTransactionsQuery query, string userId)
         {
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
-            var fxRates = new Dictionary<string, decimal>();
-            var defaultCurrency = user?.DefaultCurrency ?? "USD";
-            var transactionDTOs = (await GetTransactionsAsync(query, userId)).Select(t => new FSTransactionDTO
-            {
-                Amount = t.Amount,
-                BaseAmount = t.Amount,
-                Comment = t.Comment,
-                Date = t.Date,
-                CategoryId = t.FSCategoryId,
-                Currency = t.FSCurrencyCode,
-                SubCategoryId = t.FSSubCategoryId,
-                Id = t.Id,
-                Mode = t.Mode,
-                SubType = t.SubType,
-                Type = t.Type
-            }).ToList();
-            foreach (var transaction in transactionDTOs)
-            {
-                if (transaction.Currency != defaultCurrency)
+            string defaultCurrency = user?.DefaultCurrency ?? "USD";
+            var result = await (
+      from t in _context.Transactions
+      from r in _context.FSExchangeRates
+          .Where( r => r.From == t.FSCurrencyCode && r.To == defaultCurrency && r.Date == t.Date)
+          .DefaultIfEmpty()
+      where t.Date >= query.From
+         && t.Date <= query.To
+         && (!query.Type.HasValue || t.Type == query.Type)
+         && (!query.CategoryId.HasValue || t.FSCategoryId == query.CategoryId)
+      select new
+      {
+          Transaction = t,
+          Rate = r
+      }
+  )
+  .AsNoTracking()
+  .ToListAsync();
+
+            // Check and throw for missing exchange rates
+            var missingRates = result
+                .Where(x =>
+                    x.Rate == null &&
+                    !string.Equals(x.Transaction.FSCurrencyCode, defaultCurrency, StringComparison.OrdinalIgnoreCase))
+                .Select(x => new
                 {
-                    DateOnly transactionDate = DateOnly.FromDateTime(transaction.Date);
-                    string key = FSHelpers.GetFXKey(transaction.Currency, defaultCurrency, transactionDate);
-                    decimal rate = fxRates.GetValueOrDefault(key);
-                    if (rate <= 0)
-                    {
-                        rate = (await exchangeRateService.GetExchangeRateAsync(new FSCurrency { Code = transaction.Currency }, new FSCurrency { Code = defaultCurrency }, DateOnly.FromDateTime(transaction.Date))).ExchangeRate;
-                        fxRates.Add(key, rate);
-                    }
-                    transaction.Amount *= rate;
-                }
+                    x.Transaction.Id,
+                    x.Transaction.FSCurrencyCode,
+                    x.Transaction.Date
+                })
+                .ToList();
+
+            if (missingRates.Count != 0)
+            {
+                var details = string.Join(", ", missingRates.Select(m => $"{m.FSCurrencyCode} ({m.Date:yyyy-MM-dd})"));
+                throw new Exception($"Missing exchange rate(s) for: {details}");
             }
-            return transactionDTOs;
+
+            // Build the DTO list
+            var dtoList = result.Select(x => new FSTransactionDTO
+            {
+                Id = x.Transaction.Id,
+                BaseAmount = x.Transaction.Amount,
+                Amount = x.Transaction.FSCurrencyCode != defaultCurrency && x.Rate != null
+                    ? x.Transaction.Amount * x.Rate.ExchangeRate
+                    : x.Transaction.Amount,
+                CategoryId = x.Transaction.FSCategoryId,
+                Mode = x.Transaction.Mode,
+                Date = x.Transaction.Date,
+                Currency = x.Transaction.FSCurrencyCode,
+                Type = x.Transaction.Type,
+                SubCategoryId = x.Transaction.FSSubCategoryId,
+                Comment = x.Transaction.Comment,
+                SubType = x.Transaction.SubType
+            })
+            .OrderByDescending(t => t.Date)
+            .ToList();
+
+            return dtoList;
         }
 
         public async Task<IEnumerable<FSTransaction>> GetTransactionsAsync(GetTransactionsQuery query, string userId)
         {
-            var startDate = query.From?.ToUniversalTime();
-            var endDate = query.To?.ToUniversalTime();
+            var startDate = query.From;
+            var endDate = query.To;
             var q = _context.Transactions
             .Where(t => t.FSUserId == userId)
             .Where(t => t.Date >= startDate && t.Date <= endDate);
@@ -73,10 +100,10 @@ namespace Finsight.Services
         public async Task<FSTransaction> AddTransactionWithFXAsync(CreateTransactionCommand command, string userId)
         {
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
-            DateTime transactionDate = command.Date ?? DateTime.UtcNow;
+            DateOnly transactionDate = command.Date ?? DateOnly.FromDateTime(DateTime.UtcNow);
             FSCurrency transactionCurrency = new FSCurrency { Code = command.Currency };
             FSCurrency defaultCurrency = new() { Code = user?.DefaultCurrency ?? "USD" };
-            DateOnly exchangeDate = DateOnly.FromDateTime(transactionDate);
+            DateOnly exchangeDate = transactionDate;
             if (command.Currency != defaultCurrency.Code)
             {
                 await exchangeRateService.GetExchangeRateAsync(transactionCurrency, defaultCurrency, exchangeDate);
@@ -99,7 +126,7 @@ namespace Finsight.Services
                 Type = command.Type,
                 SubType = command.SubType,
                 Mode = command.Mode,
-                Date = command.Date ?? DateTime.UtcNow,
+                Date = command.Date ?? DateOnly.FromDateTime(DateTime.UtcNow),
                 UpdatedAt = DateTime.UtcNow
             };
             _context.Transactions.Add(transaction);
