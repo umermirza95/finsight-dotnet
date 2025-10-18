@@ -33,7 +33,7 @@ namespace Finsight.Controller
         [HttpPost]
         public async Task<IActionResult> AddTransactionAsync([FromBody] CreateTransactionCommand command)
         {
-            var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userIdString = "b2819fa8-5207-4dff-ab65-7ac14a42663b";// User.FindFirstValue(ClaimTypes.NameIdentifier)!;
             var transaction = await _transactionService.AddTransactionWithFXAsync(command, userIdString);
             return Ok(new
             {

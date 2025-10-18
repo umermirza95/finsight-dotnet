@@ -101,7 +101,7 @@ namespace Finsight.Services
         {
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
             DateOnly transactionDate = command.Date ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            FSCurrency transactionCurrency = new FSCurrency { Code = command.Currency };
+            FSCurrency transactionCurrency = new() { Code = command.Currency };
             FSCurrency defaultCurrency = new() { Code = user?.DefaultCurrency ?? "USD" };
             DateOnly exchangeDate = transactionDate;
             if (command.Currency != defaultCurrency.Code)
