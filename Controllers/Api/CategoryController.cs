@@ -10,7 +10,7 @@ namespace Finsight.Controller
 {
     [ApiController]
     [Route("api/[controller]")]
-    //[Authorize(AuthenticationSchemes = "JwtBearer")]
+    [Authorize(AuthenticationSchemes = "JwtBearer")]
     public class CategoryController : ControllerBase
     {
         private readonly ICategoryService _categoryService;
