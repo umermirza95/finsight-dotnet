@@ -13,5 +13,6 @@ namespace Finsight.Interfaces
         Task<FSTransaction> AddTransactionWithFXAsync(CreateTransactionCommand command, string userId);
 
         Task<IEnumerable<FSTransactionDTO>> GetTransactionsInDefaultCurrencyAsync(GetTransactionsQuery query, string userId);
+        Task<bool> DeleteTransactionAsync(Guid id, string userId);
     }
 }

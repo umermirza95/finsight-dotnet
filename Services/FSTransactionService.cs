@@ -19,7 +19,7 @@ namespace Finsight.Services
             var result = await (
       from t in _context.Transactions
       from r in _context.FSExchangeRates
-          .Where( r => r.From == t.FSCurrencyCode && r.To == defaultCurrency && r.Date == t.Date)
+          .Where(r => r.From == t.FSCurrencyCode && r.To == defaultCurrency && r.Date == t.Date)
           .DefaultIfEmpty()
       where t.Date >= query.From
          && t.Date <= query.To
@@ -132,6 +132,18 @@ namespace Finsight.Services
             _context.Transactions.Add(transaction);
             await _context.SaveChangesAsync();
             return transaction;
+        }
+
+        public async Task<bool> DeleteTransactionAsync(Guid id, string userId)
+        {
+            var transaction = await _context.Transactions.FirstOrDefaultAsync(t => t.Id == id && t.FSUserId == userId);
+
+            if (transaction == null)
+                return false;
+
+            _context.Transactions.Remove(transaction);
+            await _context.SaveChangesAsync();
+            return true;
         }
     }
 }
