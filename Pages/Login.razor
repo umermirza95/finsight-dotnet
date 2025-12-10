@@ -1,86 +1,108 @@
 @page "/login"
 
-@using System.ComponentModel.DataAnnotations
 
-<EditForm Model="@loginModel" OnValidSubmit="HandleLogin">
-    <DataAnnotationsValidator />
+@using Finsight.Commands
+@using Finsight.Interfaces
+@using System.Security.Claims
+@using System.Security.Cryptography.X509Certificates
+@using Finsight.Models
+@using Microsoft.AspNetCore.Authentication
+@inject NavigationManager Nav
+@inject IFSUserService FSUserService;
+@inject JwtAuthenticationStateProvider JwtAuthStateProvider;
 
-    <div class="min-h-screen flex items-center justify-center bg-[#e9eefc] relative overflow-hidden">
+<div class="bg-white min-h-screen flex items-center justify-center p-4">
 
-        <!-- Login Card -->
-        <div class="relative bg-white rounded-3xl shadow-xl flex overflow-hidden w-[900px] max-w-full">
+    <div class="flex w-full max-w-4xl bg-white rounded-[40px] shadow-2xl overflow-hidden">
 
-            <!-- Left Panel -->
-            <div class="w-1/2 bg-[#cfd9ff] flex flex-col justify-center px-12 py-16">
-                <div class="mb-6">
-                    <div class="w-12 h-12 bg-black rounded-lg"></div>
-                </div>
-                <h1 class="text-4xl font-semibold text-gray-900">
-                    Welcome<br />back!
-                </h1>
+        <div class="hidden md:flex w-2/5 bg-primary p-10 flex-col justify-center items-center text-left">
+
+            <div class="mb-8 w-full">
+                <svg class="h-10 w-10 text-black" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="24" height="24" rx="12" fill="currentColor" />
+                    <path d="M7 17L17 7M7 7H17V17" stroke="#ffffff" stroke-width="2" />
+                </svg>
             </div>
 
-            <!-- Right Panel -->
-            <div class="w-1/2 px-12 py-16 flex flex-col justify-center">
-                <h2 class="text-3xl font-bold text-gray-900 mb-8">Log In</h2>
+            <h1 class="text-5xl font-extrabold text-black leading-tight w-full">
+                Welcome<br>back!
+            </h1>
+        </div>
 
-                <!-- Email -->
+        <div class="w-full md:w-3/5 p-10 lg:p-16 flex flex-col justify-center">
+
+            <h2 class="text-4xl font-bold mb-10 text-gray-800">Log In</h2>
+
+            <EditForm Model="@loginModel" OnValidSubmit="@HandleLogin">
+                <DataAnnotationsValidator />
+
                 <div class="mb-6">
-                    <label class="block text-gray-600 mb-1">Email Address</label>
-                    <InputText @bind-Value="loginModel.Email"
-                               class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-400 focus:outline-none"
-                               placeholder="Email Address" />
-                    <ValidationMessage For="@(() => loginModel.Email)" class="text-red-600 text-sm mt-1" />
+                    <InputText id="Email" @bind-Value="loginModel.Email" placeholder="Email Address"
+                        class="w-full px-5 py-4 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-800 text-gray-700" />
+                    <ValidationMessage For="@(() => loginModel.Email)" class="text-red-500 text-sm mt-1 block" />
                 </div>
 
-                <!-- Password -->
-                <div class="mb-3">
-                    <label class="block text-gray-600 mb-1">Password</label>
-                    <div class="relative">
-                        <InputText @bind-Value="loginModel.Password" type="password"
-                                   class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-400 focus:outline-none"
-                                   placeholder="Password" />
-                    </div>
-                    <ValidationMessage For="@(() => loginModel.Password)" class="text-red-600 text-sm mt-1" />
+                <div class="mb-4">
+                    <input type="password" id="Password" @bind-value="loginModel.Password" placeholder="Password"
+                        class="w-full px-5 py-4 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-800 text-gray-700" />
+                    <ValidationMessage For="@(() => loginModel.Password)" class="text-red-500 text-sm mt-1 block" />
                 </div>
 
-                <a href="#" class="text-sm text-indigo-600 hover:underline mb-6 self-end">Forgot Password?</a>
+                <div class="flex justify-end mb-8">
+                    <a href="#" class="text-sm text-gray-500 hover:text-gray-700 font-medium">
+                        Forgot Password?
+                    </a>
+                </div>
 
-                <!-- Login Button -->
                 <button type="submit"
-                        class="w-full bg-gray-900 text-white text-lg py-3 rounded-full hover:bg-gray-800 transition-all">
+                    class="w-full py-4 bg-gray-900 text-white font-bold rounded-full hover:bg-gray-700 transition duration-200 shadow-md">
                     Login
                 </button>
+            </EditForm>
 
-                <p class="text-center text-sm text-gray-600 mt-6">
-                    Don't have an account?
-                    <a href="#" class="text-indigo-600 hover:underline">Sign up</a>
-                </p>
+            @* --- ERROR MESSAGE DISPLAY --- *@
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="mt-4 p-3  text-red-500 rounded-lg text-center font-medium" role="alert">
+                    @errorMessage
+                </div>
+            }
+            @* ----------------------------- *@
+
+            <div class="mt-8 text-center text-sm">
+                <span class="text-gray-500">Don't have an account?</span>
+                <a href="#" class="text-gray-900 font-bold hover:text-gray-700 ml-1">
+                    Sign up
+
+                </a>
             </div>
 
         </div>
-
     </div>
-
-</EditForm>
+</div>
 
 @code {
 
-    private LoginModel loginModel = new();
+    private LoginFSUserCommand loginModel = new LoginFSUserCommand();
+    private string errorMessage = string.Empty;
 
-    public class LoginModel
+    // 3. Handle the form submission
+    async private void HandleLogin()
     {
-        [Required(ErrorMessage = "Email is required")]
-        [EmailAddress(ErrorMessage = "Enter a valid email")]
-        public string Email { get; set; } = string.Empty;
-
-        [Required(ErrorMessage = "Password is required")]
-        public string Password { get; set; } = string.Empty;
+        errorMessage = "";
+        try
+        {
+            var user = await FSUserService.Login(loginModel);
+            string token = FSUserService.GenerateToken(user);
+            await JwtAuthStateProvider.MarkUserAsAuthenticated(token);
+            Nav.NavigateTo("/dashboard", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            StateHasChanged();
+        }
     }
 
-    private async Task HandleLogin()
-    {
-        // TODO: Replace with your login logic
-        Console.WriteLine($"Logging in: {loginModel.Email}, {loginModel.Password}");
-    }
+
 }

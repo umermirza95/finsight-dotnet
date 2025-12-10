@@ -7,8 +7,17 @@ using Finsight.Models;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Components.Authorization;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Blazor must have this when using custom auth providers
+builder.Services.AddAuthorizationCore();
+
+// Register custom JWT auth provider
+builder.Services.AddScoped<JwtAuthenticationStateProvider>();
+builder.Services.AddScoped<AuthenticationStateProvider>(sp =>
+    sp.GetRequiredService<JwtAuthenticationStateProvider>());
 
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddIdentity<FSUser, IdentityRole>().AddEntityFrameworkStores<AppDbContext>().AddDefaultTokenProviders();
@@ -19,8 +28,9 @@ builder.Services.AddScoped<IExchangeRateService, FSExchangeRateService>();
 builder.Services.AddHttpClient<IExchangeRateService, FSExchangeRateService>();
 
 
+
 builder.Services.AddAuthentication()
-.AddJwtBearer("JwtBearer", options =>          // for API
+.AddJwtBearer("JwtBearer", options =>
 {
     options.TokenValidationParameters = new TokenValidationParameters
     {
@@ -30,16 +40,22 @@ builder.Services.AddAuthentication()
         ValidateIssuerSigningKey = true,
         ValidIssuer = builder.Configuration["Jwt:Issuer"],
         ValidAudience = builder.Configuration["Jwt:Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
+        IssuerSigningKey = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
     };
 });
+
+builder.Services.AddAuthorization();
+builder.Services.AddAuthorizationCore();
+builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddCors(options => options.AddPolicy("CorsPolicy", policy => policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
 
 // Add services to the container.
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddControllers()
-.AddJsonOptions(option=> { option.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()); });
+.AddJsonOptions(option => { option.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()); });
 
 var app = builder.Build();
 

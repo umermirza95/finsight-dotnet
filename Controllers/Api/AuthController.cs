@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text;
 using Finsight.Commands;
 using Finsight.Interfaces;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 
@@ -57,6 +58,33 @@ namespace Finsight.Controller
                 {
                     error = ex.Message
                 });
+            }
+        }
+
+        [HttpPost("login-web")]
+        public async Task<IActionResult> LoginWeb([FromForm] LoginFSUserCommand command)
+        {
+            try
+            {
+                var user = await _userService.Login(command);
+                var claims = new List<Claim>
+                {
+                    new(ClaimTypes.Name, user.UserName ?? ""),
+                    new(ClaimTypes.NameIdentifier, user.Id),
+                    new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+                };
+
+                var identity = new ClaimsIdentity(claims, "Cookies");
+                var principal = new ClaimsPrincipal(identity);
+
+                await HttpContext.SignInAsync("Cookies", principal);
+
+                return Redirect("/dashboard");
+            }
+            catch (Exception ex)
+            {
+                
+                return Redirect("/login?error=" + Uri.EscapeDataString(ex.Message));
             }
         }
     }
