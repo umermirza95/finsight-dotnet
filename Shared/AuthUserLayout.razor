@@ -1,0 +1,50 @@
+@inherits LayoutComponentBase
+@inject NavigationManager Nav
+
+<div class="flex h-screen bg-white">
+    <div class="w-52 bg-primary p-4 flex flex-col justify-between shadow-2xl rounded-4xl m-2">
+
+        <div class="flex flex-col flex-1">
+            <span class="text-2xl font-semibold text-gray-800 text-center">FINSIGHT</span>
+
+            <nav class="space-y-8 flex flex-col flex-1 justify-center">
+
+                <a href="/dashboard"
+                   class="@GetNavClasses("/dashboard")">
+                    <div class="w-5 h-5"></div>
+                    <span>Dashboard</span>
+                </a>
+
+                <a href="/transactions"
+                   class="@GetNavClasses("/transactions")">
+                    <div class="w-5 h-5"></div>
+                    <span>Transactions</span>
+                </a>
+
+                <a href="/assets"
+                   class="@GetNavClasses("/assets")">
+                    <div class="w-5 h-5"></div>
+                    <span>Assets</span>
+                </a>
+
+            </nav>
+
+        </div>
+    </div>
+
+    <main class="flex-1 overflow-y-auto m-8">
+        @Body
+    </main>
+</div>
+
+@code {
+    private string GetNavClasses(string href)
+    {
+        var current = Nav.ToBaseRelativePath(Nav.Uri).ToLower();
+
+        if (current.StartsWith(href.TrimStart('/')))
+            return "flex items-center space-x-3 p-3 rounded-4xl bg-accent text-white font-medium";
+
+        return "flex items-center space-x-3 p-3 rounded-4xl text-primary-text hover:bg-accent hover:text-white";
+    }
+}

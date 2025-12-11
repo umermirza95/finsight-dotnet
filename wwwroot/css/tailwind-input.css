@@ -2,16 +2,25 @@
 
 @theme {
   --color-primary: var(--primary-color);
+  --color-secondary: var(--secondary-color);
+  --color-primary-text: var(--primary-text-color);
+  --color-accent: var(--accent-color);
 }
 
 /* Use @layer base to ensure correct specificity order */
 @layer base {
   :root {
     --primary-color: #b4c7ff;
+    --secondary-color: #d9d9d9;
+    --accent-color: #000000;
+    --primary-text-color: #000000;
   }
 
   /* Using :is(.dark *) ensures high enough specificity */
   :root:has(.dark), .dark {
     --primary-color: #000000;
+     --secondary-color: #000000;
+      --primary-text-color: #000000;
+       --accent-color: #000000;
   }
 }
