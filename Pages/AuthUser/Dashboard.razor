@@ -1,2 +1,157 @@
 @page "/dashboard"
 @attribute [Authorize]
+
+@using ChartJs.Blazor
+@using ChartJs.Blazor.BarChart
+@using ChartJs.Blazor.Common
+@using ChartJs.Blazor.Common.Axes
+@using ChartJs.Blazor.Common.Axes.Ticks
+@using ChartJs.Blazor.Util
+@using System.Drawing
+@using System.Security.Claims
+@using Finsight.Enums
+@using Finsight.Interfaces
+@using Finsight.Queries
+@inject ITransactionService TransactionService
+@inject AuthenticationStateProvider AuthStateProvider
+
+<div>
+    <h2 class="text-2xl font-semibold mb-6">Income & Expense — Current Year</h2>
+
+    <div class="h-86 w-full md:w-1/2 shadow-md p-4 bg-secondary rounded-xl">
+        <Chart Config="@_config" @ref="_chart">
+
+        </Chart>
+    </div>
+</div>
+
+@code {
+    private Chart _chart;
+    private BarConfig _config;
+
+    private decimal[] income = new decimal[12];
+    private decimal[] expense = new decimal[12];
+
+    private readonly string[] _months = new[]
+    {
+"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+"Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+};
+
+    protected override void OnInitialized()
+    {
+        // 🔥 Create config ONCE. Do NOT recreate later.
+        _config = new BarConfig
+        {
+            Options = new BarOptions
+            {
+                Responsive = true,
+                MaintainAspectRatio = false,
+                Legend = new Legend { Display = false },
+                Scales = new BarScales
+                {
+                     YAxes = new List<CartesianAxis>
+                    {
+                        new LinearCartesianAxis
+                        {
+                            GridLines = new GridLines
+                            {
+                                Display = false 
+                            },
+                            Ticks = new LinearCartesianTicks
+                            {
+                                Display = false, 
+                                BeginAtZero = true
+                            }
+                        }
+                    
+                    },
+                     XAxes = new List<CartesianAxis>
+                    {
+                        new CategoryAxis
+                        {
+                            GridLines = new GridLines
+                            {
+                                Display = false   // <-- THIS removes the vertical lines
+                            }
+                    }
+                }
+            }
+        }
+        };
+
+        // Add static months
+        foreach (var m in _months)
+            _config.Data.Labels.Add(m);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await LoadDataAsync();
+            BuildDatasets();
+            await _chart.Update();
+        }
+    }
+
+    private async Task LoadDataAsync()
+    {
+        var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = auth.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (userId == null)
+            return;
+
+        int year = DateTime.UtcNow.Year;
+
+        var query = new GetTransactionsQuery
+        {
+            From = new DateOnly(year, 1, 1),
+            To = new DateOnly(year, 12, 31),
+        };
+
+        var transactions = await TransactionService
+        .GetTransactionsInDefaultCurrencyAsync(query, userId);
+
+        foreach (var t in transactions)
+        {
+            int idx = t.Date.Month - 1;
+
+            if (t.Type == FSTransactionType.income)
+                income[idx] += t.Amount;
+
+            if (t.Type == FSTransactionType.expense)
+                expense[idx] += t.Amount;
+        }
+    }
+
+    private void BuildDatasets()
+    {
+        // Primary color (Tailwind green-600)
+        var incomeColor = ColorUtil.FromDrawingColor(ColorTranslator.FromHtml("#b4c7ff"));
+
+        // Accent color (Tailwind red-600)
+        var expenseColor = ColorUtil.FromDrawingColor(ColorTranslator.FromHtml("#000000"));
+
+        var incomeDataset = new BarDataset<decimal>(income)
+        {
+            Label = "Income",
+            BackgroundColor = incomeColor,
+            BorderColor = incomeColor,
+          
+            
+        };
+
+        var expenseDataset = new BarDataset<decimal>(expense)
+        {
+            Label = "Expense",
+            BackgroundColor = expenseColor,
+            BorderColor = expenseColor,
+            BorderWidth = 1
+        };
+
+        _config.Data.Datasets.Add(incomeDataset);
+        _config.Data.Datasets.Add(expenseDataset);
+    }
+}
