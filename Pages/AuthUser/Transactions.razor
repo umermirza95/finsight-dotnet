@@ -1,0 +1,34 @@
+@page "/transactions"
+@using Finsight.Models
+@using finsight_dotnet.Components.Transactions
+
+<div >
+    <div class="flex justify-end ">        
+        <button  @onclick="OpenModal" 
+                class="px-4 py-2 bg-accent text-white font-medium rounded-3xl shadow-md cursor-pointer">
+            + Add Transaction
+        </button>
+    </div>
+    
+    <TransactionModal @bind-IsVisible="isModalVisible"  OnTransactionAdded="RecordTransaction"/>
+
+</div>
+
+@code {
+    private bool isModalVisible = false;
+
+    private void OpenModal()
+    {
+        isModalVisible = true;
+    }
+
+    private void RecordTransaction(Transaction newTransaction)
+    {
+        // This is where you would typically save the transaction 
+        // to a database or a service.
+        Console.WriteLine($"New Transaction Added: Type={newTransaction.TransactionType}, Amount={newTransaction.Amount}, Date={newTransaction.Date.ToShortDateString()}");
+        
+        // For demonstration purposes, you can see the output in the browser's console.
+        // In a real app, you would refresh your list of transactions here.
+    }
+}

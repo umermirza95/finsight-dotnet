@@ -16,9 +16,23 @@
 @inject AuthenticationStateProvider AuthStateProvider
 
 <div>
-    <h2 class="text-2xl font-semibold mb-6">Income & Expense — Current Year</h2>
+    <div class="flex  mb-6">
+        <h2 class="text-2xl font-semibold">
+            Income & Expense —
+            <span class="text-gray-500">@DisplayYearText</span>
+        </h2>
 
-    <div class="h-86 w-full md:w-1/2 shadow-md p-4 bg-secondary rounded-xl">
+        <select class="border rounded-lg px-3 py-1"
+            value="@SelectedYear"
+            @onchange="OnYearChanged">
+            @foreach (var year in AvailableYears)
+            {
+                <option value="@year">@year</option>
+            }
+        </select>
+    </div>
+
+    <div class="h-86 w-full md:w-1/2 shadow-md p-4 bg-secondary rounded-3xl">
         <Chart Config="@_config" @ref="_chart">
 
         </Chart>
@@ -26,6 +40,11 @@
 </div>
 
 @code {
+    private int SelectedYear;
+    private int CurrentYear => DateTime.UtcNow.Year;
+    private readonly int[] AvailableYears = new[] { 2024, 2025 };
+    private string DisplayYearText =>
+    SelectedYear == CurrentYear ? "Current Year" : SelectedYear.ToString();
     private Chart _chart;
     private BarConfig _config;
 
@@ -40,6 +59,7 @@
 
     protected override void OnInitialized()
     {
+        SelectedYear = CurrentYear;
         // 🔥 Create config ONCE. Do NOT recreate later.
         _config = new BarConfig
         {
@@ -103,7 +123,7 @@
         if (userId == null)
             return;
 
-        int year = DateTime.UtcNow.Year;
+        int year = SelectedYear;
 
         var query = new GetTransactionsQuery
         {
@@ -139,6 +159,7 @@
             Label = "Income",
             BackgroundColor = incomeColor,
             BorderColor = incomeColor,
+             BorderWidth = 1,
           
             
         };
@@ -148,10 +169,27 @@
             Label = "Expense",
             BackgroundColor = expenseColor,
             BorderColor = expenseColor,
-            BorderWidth = 1
+            BorderWidth = 1,
         };
 
         _config.Data.Datasets.Add(incomeDataset);
         _config.Data.Datasets.Add(expenseDataset);
+    }
+
+    private async Task OnYearChanged(ChangeEventArgs e)
+    {
+        SelectedYear = int.Parse(e.Value!.ToString()!);
+        await ReloadChartAsync();
+    }
+
+    private async Task ReloadChartAsync()
+    {
+        Array.Clear(income, 0, income.Length);
+        Array.Clear(expense, 0, expense.Length);
+        _config.Data.Datasets.Clear();
+
+        await LoadDataAsync();
+        BuildDatasets();
+        await _chart.Update();
     }
 }
