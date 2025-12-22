@@ -3,17 +3,32 @@ using Finsight.Enums;
 
 namespace Finsight.Commands
 {
-    public class CreateTransactionCommand()
+    public class CreateTransactionCommand
     {
-        
-        public required decimal Amount { get; set; }
-        public required Guid CategoryId { get; set; }
+        [Required]
+        [Range(0.01, double.MaxValue, ErrorMessage = "Amount must be greater than 0")]
+        public decimal Amount { get; set; }
+
+        [Required(ErrorMessage = "Category is required")]
+        public Guid CategoryId { get; set; }
+
         public Guid? SubCategoryId { get; set; }
-        public required string Currency { get; set; }
+
+        [Required]
+        [StringLength(3, MinimumLength = 3)]
+        public string Currency { get; set; } = "USD";
+
+        [StringLength(250)]
         public string? Comment { get; set; }
+
         public DateOnly? Date { get; set; }
-        public required FSTransactionType Type { get; set; }
+
+        [Required]
+        public FSTransactionType Type { get; set; }
+
         public FSTransactionSubType? SubType { get; set; }
-        public required FSTransactionMode Mode { get; set; }
+
+        [Required]
+        public FSTransactionMode Mode { get; set; }
     }
 }

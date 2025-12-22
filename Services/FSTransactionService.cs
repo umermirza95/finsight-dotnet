@@ -21,10 +21,11 @@ namespace Finsight.Services
       from r in _context.FSExchangeRates
           .Where(r => r.From == t.FSCurrencyCode && r.To == defaultCurrency && r.Date == t.Date)
           .DefaultIfEmpty()
-      where t.Date >= query.From
-         && t.Date <= query.To
-         && (!query.Type.HasValue || t.Type == query.Type)
-         && (!query.CategoryId.HasValue || t.FSCategoryId == query.CategoryId)
+      where t.FSUserId == userId 
+        && t.Date >= query.From
+        && t.Date <= query.To
+        && (!query.Type.HasValue || t.Type == query.Type)
+        && (!query.CategoryId.HasValue || t.FSCategoryId == query.CategoryId)
       select new
       {
           Transaction = t,

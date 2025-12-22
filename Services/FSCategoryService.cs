@@ -12,7 +12,6 @@ namespace Finsight.Services
         public async Task<List<FSCategory>> GetCategoriesAsync(string userId)
         {
             return await _context.Categories
-                        .Where(c => c.FSUserId == userId)
                         .Include(c => c.SubCategories)
                         .ToListAsync();
         }

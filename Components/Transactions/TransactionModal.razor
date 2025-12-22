@@ -1,3 +1,5 @@
+@using Finsight.Commands
+@using Finsight.Enums
 @using Finsight.Interfaces
 @using Finsight.Models
 @using Microsoft.AspNetCore.Components.Authorization
@@ -6,11 +8,14 @@
 @inject AuthenticationStateProvider AuthStateProvider
 @inject UserManager<FSUser> UserManager
 @inject ICategoryService CategoryService
+@inject ITransactionService TransactionService
 
-<div class="fixed inset-0 z-50 bg-black/50 flex justify-center items-center" style="@(IsVisible ? "" : "display:none")"
-    @onclick="HandleBackgroundClick">
+<div class="fixed inset-0 z-50 bg-black/50 flex justify-center items-center"
+     style="@(IsVisible ? "" : "display:none")"
+     @onclick="HandleBackgroundClick">
 
-    <div class="bg-white rounded-3xl shadow-2xl w-full md:max-w-md p-6" @onclick:stopPropagation="true">
+    <div class="bg-white rounded-3xl shadow-2xl w-full md:max-w-md p-6"
+         @onclick:stopPropagation="true">
 
         <h3 class="text-2xl font-semibold text-center mb-4">
             Record Transaction
@@ -18,57 +23,68 @@
 
         <EditForm Model="@TransactionData" OnValidSubmit="HandleValidSubmit">
             <DataAnnotationsValidator />
+            <ValidationSummary class="text-red-600 mb-4" />
 
             <!-- Transaction Type -->
             <div class="mb-4">
-                <label class="text-md  mb-1 block">Transaction Type</label>
-                <InputSelect @bind-Value="TransactionData.TransactionType"
-                    class="w-full h-12 rounded-lg bg-gray-50 border border-primary px-2">
-                    <option value="income">Income</option>
-                    <option value="expense">Expense</option>
+                <label class="block mb-1">Transaction Type</label>
+                <InputSelect @bind-Value="TransactionData.Type"
+                             class="w-full h-12 rounded-lg bg-gray-50 border border-primary px-2">
+                    <option value="@FSTransactionType.income">Income</option>
+                    <option value="@FSTransactionType.expense">Expense</option>
                 </InputSelect>
+                <ValidationMessage For="@(() => TransactionData.Type)" />
             </div>
 
             <!-- Amount / Currency -->
             <div class="grid grid-cols-2 gap-4 mb-4">
                 <div>
-                    <label class="text-md  mb-1 block">Amount</label>
+                    <label class="block mb-1">Amount</label>
                     <InputNumber @bind-Value="TransactionData.Amount"
-                        class="w-full h-12 rounded-lg bg-gray-50 border border-primary px-2" />
+                                 class="w-full h-12 rounded-lg bg-gray-50 border border-primary px-2" />
+                    <ValidationMessage For="@(() => TransactionData.Amount)" />
                 </div>
 
                 <div>
-                    <label class="text-md  mb-1 block">Currency</label>
+                    <label class="block mb-1">Currency</label>
                     <InputSelect @bind-Value="TransactionData.Currency"
-                        class="w-full h-12 rounded-lg bg-gray-50 border border-primary px-2">
+                                 class="w-full h-12 rounded-lg bg-gray-50 border border-primary px-2">
                         <option value="USD">USD</option>
                         <option value="EUR">EUR</option>
                         <option value="GBP">GBP</option>
                     </InputSelect>
+                    <ValidationMessage For="@(() => TransactionData.Currency)" />
                 </div>
             </div>
 
             <!-- Category / SubCategory -->
             <div class="grid gap-4 mb-4 @(SubCategories.Any() ? "grid-cols-2" : "grid-cols-1")">
                 <div>
-                    <label class="text-md mb-1 block">Category</label>
+                    <label class="block mb-1">Category</label>
                     <select class="w-full h-12 rounded-lg bg-gray-50 border border-primary px-2"
-                        @onchange="OnCategoryChanged">
+                            @onchange="OnCategoryChanged">
                         <option value="">Select</option>
                         @foreach (var cat in Categories)
                         {
                             <option value="@cat.Id">@cat.Name</option>
                         }
                     </select>
+
+                    @if (!string.IsNullOrEmpty(CategoryValidationError))
+                    {
+                        <div class="text-red-600 text-sm mt-1">
+                            @CategoryValidationError
+                        </div>
+                    }
                 </div>
 
                 @if (SubCategories.Any())
                 {
                     <div>
-                        <label class="text-md mb-1 block">Sub Category</label>
+                        <label class="block mb-1">Sub Category</label>
                         <select class="w-full h-12 rounded-lg bg-gray-50 border border-primary px-2"
-                            @bind="SelectedSubCategoryId">
-                            <option class="text-gray-50" value="">Select</option>
+                                @bind="TransactionData.SubCategoryId">
+                            <option value="">Select</option>
                             @foreach (var sub in SubCategories)
                             {
                                 <option value="@sub.Id">@sub.Name</option>
@@ -78,33 +94,36 @@
                 }
             </div>
 
-            <!-- Comments -->
+            <!-- Comment -->
             <div class="mb-4">
-                <label class="text-md mb-1 block">Comments</label>
-                <InputTextArea @bind-Value="TransactionData.Comments"
-                    class="w-full h-12 rounded-lg bg-gray-50 border border-primary px-2" />
+                <label class="block mb-1">Comment</label>
+                <InputTextArea @bind-Value="TransactionData.Comment"
+                               class="w-full h-12 rounded-lg bg-gray-50 border border-primary px-2" />
+                <ValidationMessage For="@(() => TransactionData.Comment)" />
             </div>
 
             <!-- Mode / Date -->
             <div class="grid grid-cols-2 gap-4 mb-6">
                 <div>
-                    <label class="text-md mb-1 block">Mode</label>
+                    <label class="block mb-1">Mode</label>
                     <InputSelect @bind-Value="TransactionData.Mode"
-                        class="w-full h-12 rounded-lg bg-gray-50 border border-primary px-2">
-                        <option value="Cash">Cash</option>
-                        <option value="Card">Card</option>
-                        <option value="Transfer">Transfer</option>
+                                 class="w-full h-12 rounded-lg bg-gray-50 border border-primary px-2">
+                        <option value="@FSTransactionMode.cash">Cash</option>
+                        <option value="@FSTransactionMode.card">Card</option>
+                        <option value="@FSTransactionMode.transfer">Transfer</option>
                     </InputSelect>
+                    <ValidationMessage For="@(() => TransactionData.Mode)" />
                 </div>
 
                 <div>
-                    <label class="text-md mb-1 block">Date</label>
-                    <InputDate @bind-Value="TransactionData.Date"
-                        class="w-full h-12 rounded-lg bg-gray-50 border border-primary px-2" />
+                    <label class="block mb-1">Date</label>
+                    <InputDate @bind-Value="DateProxy"
+                               class="w-full h-12 rounded-lg bg-gray-50 border border-primary px-2" />
                 </div>
             </div>
 
-            <button type="submit" class="w-full py-3 bg-gray-900 text-white rounded-3xl">
+            <button type="submit"
+                    class="w-full py-3 bg-gray-900 text-white rounded-3xl">
                 Add
             </button>
         </EditForm>
@@ -114,15 +133,23 @@
 @code {
     [Parameter] public bool IsVisible { get; set; }
     [Parameter] public EventCallback<bool> IsVisibleChanged { get; set; }
-    [Parameter] public EventCallback<Transaction> OnTransactionAdded { get; set; }
 
-    private Transaction TransactionData = new();
+    private CreateTransactionCommand TransactionData = new();
 
     private List<FSCategory> Categories = [];
     private List<FSSubCategory> SubCategories = [];
 
     private Guid? SelectedCategoryId;
     private Guid? SelectedSubCategoryId;
+    private string? CategoryValidationError;
+
+    private DateTime? DateProxy
+    {
+        get => TransactionData.Date?.ToDateTime(TimeOnly.MinValue);
+        set => TransactionData.Date = value.HasValue
+            ? DateOnly.FromDateTime(value.Value)
+            : null;
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -138,6 +165,8 @@
 
     private void OnCategoryChanged(ChangeEventArgs e)
     {
+        CategoryValidationError = null;
+
         if (!Guid.TryParse(e.Value?.ToString(), out var categoryId))
         {
             SelectedCategoryId = null;
@@ -145,22 +174,32 @@
             return;
         }
 
-        SelectedCategoryId = categoryId; // ← MISSING LINE (critical)
+        SelectedCategoryId = categoryId;
+        TransactionData.CategoryId = categoryId;
 
         var category = Categories.FirstOrDefault(c => c.Id == categoryId);
 
         SubCategories = category?.SubCategories?.Any() == true
-        ? category.SubCategories.ToList()
-        : [];
+            ? category.SubCategories.ToList()
+            : [];
 
         SelectedSubCategoryId = null;
+        TransactionData.SubCategoryId = null;
     }
 
     private async Task HandleValidSubmit()
     {
-        TransactionData.CategoryId = SelectedCategoryId ?? Guid.Empty;
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
 
-        await OnTransactionAdded.InvokeAsync(TransactionData);
+        if (user == null)
+            return;
+
+
+        TransactionData.SubCategoryId = SelectedSubCategoryId;
+
+        await TransactionService.AddTransactionWithFXAsync(TransactionData, user.Id);
+
         await IsVisibleChanged.InvokeAsync(false);
 
         TransactionData = new();
