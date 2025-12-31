@@ -2,18 +2,17 @@
 @using Finsight.Models
 @using finsight_dotnet.Components.Transactions
 
-<div >
-    <div class="flex justify-end ">        
-        <button  @onclick="OpenModal" 
-                class="px-4 py-2 bg-accent text-white font-medium rounded-3xl shadow-md cursor-pointer">
-            + Add Transaction
+
+<div>
+    <div class="w-3/5 relative">
+        <TransactionListItem />
+        <button @onclick="OpenModal"
+            class="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-primary text-primary-text text-3xl flex items-center justify-center shadow-lg cursor-pointer focus:outline-none">
+            +
         </button>
+        <TransactionModal @bind-IsVisible="isModalVisible" />
     </div>
-    
-    <TransactionModal @bind-IsVisible="isModalVisible" />
-
 </div>
-
 @code {
     private bool isModalVisible = false;
 

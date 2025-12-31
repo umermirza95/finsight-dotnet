@@ -9,15 +9,15 @@
 @inject UserManager<FSUser> UserManager
 @inject ICategoryService CategoryService
 @inject ITransactionService TransactionService
+@inject IJSRuntime JS
 
-<div class="fixed inset-0 z-50 bg-black/50 flex justify-center items-center"
-     style="@(IsVisible ? "" : "display:none")"
-     @onclick="HandleBackgroundClick">
+<div class="fixed inset-0 z-50 bg-black/50 flex justify-center items-center" style="@(IsVisible ? "" : "display:none")"
+    @onclick="HandleBackgroundClick">
 
-    <div class="bg-white rounded-3xl shadow-2xl w-full md:max-w-md p-6"
-         @onclick:stopPropagation="true">
+    <div class="bg-white rounded-3xl shadow-2xl w-[90vw] md:max-w-md p-6 max-h-[90vh] overflow-auto scrollbar-hide"
+        @onclick:stopPropagation="true">
 
-        <h3 class="text-2xl font-semibold text-center mb-4">
+        <h3 class="text-2xl font-semibold text-center mb-4 text-primary-text">
             Record Transaction
         </h3>
 
@@ -29,9 +29,9 @@
             <div class="mb-4">
                 <label class="block mb-1">Transaction Type</label>
                 <InputSelect @bind-Value="TransactionData.Type"
-                             class="w-full h-12 rounded-lg bg-gray-50 border border-primary px-2">
-                    <option value="@FSTransactionType.income">Income</option>
+                    class="w-full h-12 rounded-lg  border border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-800 px-2">
                     <option value="@FSTransactionType.expense">Expense</option>
+                    <option value="@FSTransactionType.income">Income</option>
                 </InputSelect>
                 <ValidationMessage For="@(() => TransactionData.Type)" />
             </div>
@@ -40,15 +40,15 @@
             <div class="grid grid-cols-2 gap-4 mb-4">
                 <div>
                     <label class="block mb-1">Amount</label>
-                    <InputNumber @bind-Value="TransactionData.Amount"
-                                 class="w-full h-12 rounded-lg bg-gray-50 border border-primary px-2" />
+                    <InputNumber placeholder="Enter Amount" @bind-Value="TransactionData.Amount"
+                        class="w-full h-12 rounded-lg border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-800 border  px-2" />
                     <ValidationMessage For="@(() => TransactionData.Amount)" />
                 </div>
 
                 <div>
                     <label class="block mb-1">Currency</label>
                     <InputSelect @bind-Value="TransactionData.Currency"
-                                 class="w-full h-12 rounded-lg bg-gray-50 border border-primary px-2">
+                        class="w-full h-12 rounded-lg border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-800 border  px-2">
                         <option value="USD">USD</option>
                         <option value="EUR">EUR</option>
                         <option value="GBP">GBP</option>
@@ -61,8 +61,9 @@
             <div class="grid gap-4 mb-4 @(SubCategories.Any() ? "grid-cols-2" : "grid-cols-1")">
                 <div>
                     <label class="block mb-1">Category</label>
-                    <select class="w-full h-12 rounded-lg bg-gray-50 border border-primary px-2"
-                            @onchange="OnCategoryChanged">
+                    <select
+                        class="w-full h-12 rounded-lg border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-800 border px-2"
+                        @onchange="OnCategoryChanged">
                         <option value="">Select</option>
                         @foreach (var cat in Categories)
                         {
@@ -82,8 +83,9 @@
                 {
                     <div>
                         <label class="block mb-1">Sub Category</label>
-                        <select class="w-full h-12 rounded-lg bg-gray-50 border border-primary px-2"
-                                @bind="TransactionData.SubCategoryId">
+                        <select
+                            class="w-full h-12 rounded-lg border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-800 border  px-2"
+                            @bind="TransactionData.SubCategoryId">
                             <option value="">Select</option>
                             @foreach (var sub in SubCategories)
                             {
@@ -94,20 +96,16 @@
                 }
             </div>
 
-            <!-- Comment -->
-            <div class="mb-4">
-                <label class="block mb-1">Comment</label>
-                <InputTextArea @bind-Value="TransactionData.Comment"
-                               class="w-full h-12 rounded-lg bg-gray-50 border border-primary px-2" />
-                <ValidationMessage For="@(() => TransactionData.Comment)" />
-            </div>
+
+
+
 
             <!-- Mode / Date -->
-            <div class="grid grid-cols-2 gap-4 mb-6">
+            <div class="grid grid-cols-2 gap-4 mb-4">
                 <div>
                     <label class="block mb-1">Mode</label>
                     <InputSelect @bind-Value="TransactionData.Mode"
-                                 class="w-full h-12 rounded-lg bg-gray-50 border border-primary px-2">
+                        class="w-full h-12 rounded-lg  border border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-800 px-2">
                         <option value="@FSTransactionMode.cash">Cash</option>
                         <option value="@FSTransactionMode.card">Card</option>
                         <option value="@FSTransactionMode.transfer">Transfer</option>
@@ -118,12 +116,70 @@
                 <div>
                     <label class="block mb-1">Date</label>
                     <InputDate @bind-Value="DateProxy"
-                               class="w-full h-12 rounded-lg bg-gray-50 border border-primary px-2" />
+                        class="w-full h-12 rounded-lg  border border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-800 px-2" />
                 </div>
             </div>
 
-            <button type="submit"
-                    class="w-full py-3 bg-gray-900 text-white rounded-3xl">
+            <!-- Comment -->
+            <div class="mb-4">
+                <label class="block mb-1">Comment</label>
+
+                <div class="relative">
+                    <InputTextArea @bind-Value="TransactionData.Comment" class="w-full h-12 pr-16 rounded-lg border border-gray-300
+                   px-2 py-3
+                   focus:outline-none focus:ring-2 focus:ring-gray-800
+                   resize-none leading-tight" />
+
+                    <!-- Hidden file input -->
+                    <div id="fileInputContainer" style="display:none">
+                        <InputFile OnChange="OnFilesSelected" multiple />
+                    </div>
+
+                    <!-- Attachment button -->
+                    <button @onclick="TriggerFilePicker" type="button" class="absolute inset-y-0 right-0
+                        cursor-pointer
+                       w-14
+                       h-12
+                       flex items-center justify-center
+                       bg-secondary
+                       border-r border-t border-b border-gray-300
+                       rounded-tr-lg rounded-br-lg
+                       text-primary-text ">
+                        <span class="material-symbols-outlined text-xl">
+                            attach_file
+                        </span>
+                    </button>
+                </div>
+
+                <ValidationMessage For="@(() => TransactionData.Comment)" />
+            </div>
+
+            @if (SelectedFiles.Any())
+            {
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+                    @foreach (var file in SelectedFiles)
+                    {
+                        <div class="relative  w-32 h-32 ">
+                            @if (file.ContentType.StartsWith("image/") && FilePreviews.ContainsKey(file))
+                            {
+                                <img src="@FilePreviews[file]" class="object-cover w-full h-full rounded-lg" />
+                            }
+                            else
+                            {
+                                <span class="text-sm">@file.Name</span>
+                            }
+
+                            <button type="button"
+                                class="absolute top-1 right-1 text-white bg-red-500 rounded-full w-5 h-5 flex items-center justify-center text-xs"
+                                @onclick="() => RemoveFile(file)">
+                                ✕
+                            </button>
+                        </div>
+                    }
+                </div>
+            }
+
+            <button type="submit" class="w-full h-12 py-3 bg-gray-900 text-white rounded-3xl">
                 Add
             </button>
         </EditForm>
@@ -133,7 +189,7 @@
 @code {
     [Parameter] public bool IsVisible { get; set; }
     [Parameter] public EventCallback<bool> IsVisibleChanged { get; set; }
-
+    private ElementReference fileInput;
     private CreateTransactionCommand TransactionData = new();
 
     private List<FSCategory> Categories = [];
@@ -143,12 +199,46 @@
     private Guid? SelectedSubCategoryId;
     private string? CategoryValidationError;
 
+    private List<IBrowserFile> SelectedFiles = [];
+
+    private Dictionary<IBrowserFile, string> FilePreviews = new();
+
+    private async Task TriggerFilePicker()
+    {
+        await JS.InvokeVoidAsync("triggerFileInput", "fileInputContainer");
+    }
+
+    private async Task OnFilesSelected(InputFileChangeEventArgs e)
+    {
+        SelectedFiles = e.GetMultipleFiles().ToList();
+        FilePreviews.Clear();
+
+        foreach (var file in SelectedFiles)
+        {
+            if (file.ContentType.StartsWith("image/"))
+            {
+                using var ms = new MemoryStream();
+                await file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024)
+                .CopyToAsync(ms);
+                var base64 = Convert.ToBase64String(ms.ToArray());
+                FilePreviews[file] = $"data:{file.ContentType};base64,{base64}";
+            }
+        }
+    }
+
+    private void RemoveFile(IBrowserFile file)
+    {
+        SelectedFiles.Remove(file);
+        if (FilePreviews.ContainsKey(file))
+            FilePreviews.Remove(file);
+    }
+
     private DateTime? DateProxy
     {
         get => TransactionData.Date?.ToDateTime(TimeOnly.MinValue);
         set => TransactionData.Date = value.HasValue
-            ? DateOnly.FromDateTime(value.Value)
-            : null;
+        ? DateOnly.FromDateTime(value.Value)
+        : null;
     }
 
     protected override async Task OnInitializedAsync()
@@ -180,8 +270,8 @@
         var category = Categories.FirstOrDefault(c => c.Id == categoryId);
 
         SubCategories = category?.SubCategories?.Any() == true
-            ? category.SubCategories.ToList()
-            : [];
+        ? category.SubCategories.ToList()
+        : [];
 
         SelectedSubCategoryId = null;
         TransactionData.SubCategoryId = null;
@@ -195,11 +285,7 @@
         if (user == null)
             return;
 
-
-        TransactionData.SubCategoryId = SelectedSubCategoryId;
-
         await TransactionService.AddTransactionWithFXAsync(TransactionData, user.Id);
-
         await IsVisibleChanged.InvokeAsync(false);
 
         TransactionData = new();
