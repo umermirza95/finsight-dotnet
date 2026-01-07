@@ -4,14 +4,13 @@
 
 
 <div>
-    <div class="w-3/5 relative">
-        <TransactionListItem />
+    <div class="flex justify-end">
         <button @onclick="OpenModal"
-            class="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-primary text-primary-text text-3xl flex items-center justify-center shadow-lg cursor-pointer focus:outline-none">
-            +
+            class=" py-2 px-4 text-sm rounded-lg bg-primary text-primary-text  flex items-center justify-center shadow-lg cursor-pointer focus:outline-none">
+            + Add New
         </button>
-        <TransactionModal @bind-IsVisible="isModalVisible" />
     </div>
+    <TransactionModal @bind-IsVisible="isModalVisible" />
 </div>
 @code {
     private bool isModalVisible = false;

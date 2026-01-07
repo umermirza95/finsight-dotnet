@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using Finsight.Enums;
+using Microsoft.AspNetCore.Components.Forms;
 
 namespace Finsight.Commands
 {
@@ -10,7 +11,7 @@ namespace Finsight.Commands
         public decimal Amount { get; set; }
 
         [Required(ErrorMessage = "Category is required")]
-        public Guid CategoryId { get; set; }
+        public Guid? CategoryId { get; set; }
 
         public Guid? SubCategoryId { get; set; }
 
@@ -30,5 +31,7 @@ namespace Finsight.Commands
 
         [Required]
         public FSTransactionMode Mode { get; set; }
+
+        public List<IBrowserFile> Attachments { get; set; } = [];
     }
 }

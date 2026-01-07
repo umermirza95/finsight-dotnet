@@ -10,10 +10,13 @@ public class AppDbContext : IdentityDbContext<FSUser>
     public DbSet<FSSubCategory> SubCategories { get; set; }
     public DbSet<FSTransaction> Transactions { get; set; }
     public DbSet<FSExchangeRate> FSExchangeRates { get; set; }
+    public DbSet<FSCurrency> FSCurrencies { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.Entity<FSCurrency>()
+        .ToTable("FSCurrencies");
 
         modelBuilder.Entity<FSCategory>()
             .Property(c => c.Type)
@@ -73,14 +76,12 @@ public class AppDbContext : IdentityDbContext<FSUser>
               .HasOne<FSCurrency>()
               .WithMany()
               .HasForeignKey(fx => fx.From)
-              .HasConstraintName("FK_FSExchangeRate_FromCurrency")
               .OnDelete(DeleteBehavior.Restrict);
 
             entity
              .HasOne<FSCurrency>()
              .WithMany()
              .HasForeignKey(fx => fx.To)
-             .HasConstraintName("FK_FSExchangeRate_ToCurrency")
              .OnDelete(DeleteBehavior.Restrict);
         });
 

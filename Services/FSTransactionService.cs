@@ -120,7 +120,7 @@ namespace Finsight.Services
                 Id = Guid.NewGuid(),
                 FSUserId = userId,
                 Amount = command.Amount,
-                FSCategoryId = command.CategoryId,
+                FSCategoryId = command.CategoryId ?? throw new ArgumentNullException("CategoryId is required"),
                 FSSubCategoryId = command.SubCategoryId,
                 FSCurrencyCode = command.Currency,
                 Comment = command.Comment,

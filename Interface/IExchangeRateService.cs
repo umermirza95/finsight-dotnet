@@ -7,5 +7,7 @@ namespace Finsight.Services
     {
         public Task<FSExchangeRate> GetExchangeRateAsync(FSCurrency from, FSCurrency to, DateOnly date);
         void LoadAllExchangeRates();
+
+        List<FSCurrency> SupportedCurrencies { get; }
     }
 }

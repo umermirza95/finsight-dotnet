@@ -15,6 +15,8 @@ namespace Finsight.Services
 
         private Dictionary<string, decimal> cachedExchangeRates = [];
 
+        public List<FSCurrency> SupportedCurrencies => [.. _context.FSCurrencies];
+
         public async void LoadAllExchangeRates()
         {
             var currencies = await _context.FSExchangeRates.ToListAsync();

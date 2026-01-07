@@ -26,7 +26,6 @@ namespace Finsight.Models
 
         public required DateTime UpdatedAt { get; set; }
 
-        [ForeignKey(nameof(FSCurrency))]
         public required string FSCurrencyCode { get; set; }
 
         public required FSTransactionType Type { get; set; }

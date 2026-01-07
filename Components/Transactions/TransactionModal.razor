@@ -2,6 +2,7 @@
 @using Finsight.Enums
 @using Finsight.Interfaces
 @using Finsight.Models
+@using Finsight.Services
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Identity
 
@@ -9,6 +10,7 @@
 @inject UserManager<FSUser> UserManager
 @inject ICategoryService CategoryService
 @inject ITransactionService TransactionService
+@inject IExchangeRateService ExchangeRateService;
 @inject IJSRuntime JS
 
 <div class="fixed inset-0 z-50 bg-black/50 flex justify-center items-center" style="@(IsVisible ? "" : "display:none")"
@@ -23,8 +25,6 @@
 
         <EditForm Model="@TransactionData" OnValidSubmit="HandleValidSubmit">
             <DataAnnotationsValidator />
-            <ValidationSummary class="text-red-600 mb-4" />
-
             <!-- Transaction Type -->
             <div class="mb-4">
                 <label class="block mb-1">Transaction Type</label>
@@ -42,16 +42,17 @@
                     <label class="block mb-1">Amount</label>
                     <InputNumber placeholder="Enter Amount" @bind-Value="TransactionData.Amount"
                         class="w-full h-12 rounded-lg border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-800 border  px-2" />
-                    <ValidationMessage For="@(() => TransactionData.Amount)" />
+                    <ValidationMessage class="text-red-600" For="@(() => TransactionData.Amount)" />
                 </div>
 
                 <div>
                     <label class="block mb-1">Currency</label>
                     <InputSelect @bind-Value="TransactionData.Currency"
                         class="w-full h-12 rounded-lg border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-800 border  px-2">
-                        <option value="USD">USD</option>
-                        <option value="EUR">EUR</option>
-                        <option value="GBP">GBP</option>
+                        @foreach (var currency in SupportedCurrencies)
+                        {
+                            <option value="@currency.Code">@currency.Code</option>
+                        }
                     </InputSelect>
                     <ValidationMessage For="@(() => TransactionData.Currency)" />
                 </div>
@@ -61,22 +62,16 @@
             <div class="grid gap-4 mb-4 @(SubCategories.Any() ? "grid-cols-2" : "grid-cols-1")">
                 <div>
                     <label class="block mb-1">Category</label>
-                    <select
-                        class="w-full h-12 rounded-lg border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-800 border px-2"
-                        @onchange="OnCategoryChanged">
+                    <InputSelect @bind-Value="TransactionData.CategoryId"
+                        class="w-full h-12 rounded-lg border-gray-300 border px-2" @onchange="OnCategoryChanged">
                         <option value="">Select</option>
                         @foreach (var cat in Categories)
                         {
                             <option value="@cat.Id">@cat.Name</option>
                         }
-                    </select>
+                    </InputSelect>
 
-                    @if (!string.IsNullOrEmpty(CategoryValidationError))
-                    {
-                        <div class="text-red-600 text-sm mt-1">
-                            @CategoryValidationError
-                        </div>
-                    }
+                    <ValidationMessage class="text-red-600" For="@(() => TransactionData.CategoryId)" />
                 </div>
 
                 @if (SubCategories.Any())
@@ -96,10 +91,6 @@
                 }
             </div>
 
-
-
-
-
             <!-- Mode / Date -->
             <div class="grid grid-cols-2 gap-4 mb-4">
                 <div>
@@ -109,13 +100,14 @@
                         <option value="@FSTransactionMode.cash">Cash</option>
                         <option value="@FSTransactionMode.card">Card</option>
                         <option value="@FSTransactionMode.transfer">Transfer</option>
+                        <option value="@FSTransactionMode.online">Online</option>
                     </InputSelect>
                     <ValidationMessage For="@(() => TransactionData.Mode)" />
                 </div>
 
                 <div>
                     <label class="block mb-1">Date</label>
-                    <InputDate @bind-Value="DateProxy"
+                    <InputDate @bind-Value="TransactionData.Date"
                         class="w-full h-12 rounded-lg  border border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-800 px-2" />
                 </div>
             </div>
@@ -154,10 +146,10 @@
                 <ValidationMessage For="@(() => TransactionData.Comment)" />
             </div>
 
-            @if (SelectedFiles.Any())
+            @if (TransactionData.Attachments.Any())
             {
                 <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
-                    @foreach (var file in SelectedFiles)
+                    @foreach (var file in TransactionData.Attachments)
                     {
                         <div class="relative  w-32 h-32 ">
                             @if (file.ContentType.StartsWith("image/") && FilePreviews.ContainsKey(file))
@@ -189,19 +181,12 @@
 @code {
     [Parameter] public bool IsVisible { get; set; }
     [Parameter] public EventCallback<bool> IsVisibleChanged { get; set; }
-    private ElementReference fileInput;
     private CreateTransactionCommand TransactionData = new();
-
     private List<FSCategory> Categories = [];
     private List<FSSubCategory> SubCategories = [];
-
-    private Guid? SelectedCategoryId;
-    private Guid? SelectedSubCategoryId;
-    private string? CategoryValidationError;
-
-    private List<IBrowserFile> SelectedFiles = [];
-
+    private List<FSCurrency> SupportedCurrencies = [];
     private Dictionary<IBrowserFile, string> FilePreviews = new();
+    FSUser? user = new();
 
     private async Task TriggerFilePicker()
     {
@@ -210,12 +195,10 @@
 
     private async Task OnFilesSelected(InputFileChangeEventArgs e)
     {
-        SelectedFiles = e.GetMultipleFiles().ToList();
-        FilePreviews.Clear();
-
-        foreach (var file in SelectedFiles)
+        TransactionData.Attachments = [.. TransactionData.Attachments, .. e.GetMultipleFiles().ToList()];
+        foreach (var file in TransactionData.Attachments)
         {
-            if (file.ContentType.StartsWith("image/"))
+            if (file.ContentType.StartsWith("image/") && !FilePreviews.ContainsKey(file))
             {
                 using var ms = new MemoryStream();
                 await file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024)
@@ -228,43 +211,36 @@
 
     private void RemoveFile(IBrowserFile file)
     {
-        SelectedFiles.Remove(file);
+        TransactionData.Attachments.Remove(file);
         if (FilePreviews.ContainsKey(file))
             FilePreviews.Remove(file);
-    }
-
-    private DateTime? DateProxy
-    {
-        get => TransactionData.Date?.ToDateTime(TimeOnly.MinValue);
-        set => TransactionData.Date = value.HasValue
-        ? DateOnly.FromDateTime(value.Value)
-        : null;
     }
 
     protected override async Task OnInitializedAsync()
     {
         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        var user = await UserManager.GetUserAsync(authState.User);
+        user = await UserManager.GetUserAsync(authState.User);
 
         if (user != null)
         {
             TransactionData.Currency = user.DefaultCurrency ?? "USD";
+            TransactionData.Date = DateOnly.FromDateTime(DateTime.Now);
+            TransactionData.CategoryId = null;
             Categories = await CategoryService.GetCategoriesAsync(user.Id);
+            SupportedCurrencies = ExchangeRateService.SupportedCurrencies;
+
         }
     }
 
     private void OnCategoryChanged(ChangeEventArgs e)
     {
-        CategoryValidationError = null;
 
         if (!Guid.TryParse(e.Value?.ToString(), out var categoryId))
         {
-            SelectedCategoryId = null;
             SubCategories.Clear();
             return;
         }
 
-        SelectedCategoryId = categoryId;
         TransactionData.CategoryId = categoryId;
 
         var category = Categories.FirstOrDefault(c => c.Id == categoryId);
@@ -272,15 +248,11 @@
         SubCategories = category?.SubCategories?.Any() == true
         ? category.SubCategories.ToList()
         : [];
-
-        SelectedSubCategoryId = null;
         TransactionData.SubCategoryId = null;
     }
 
     private async Task HandleValidSubmit()
     {
-        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        var user = await UserManager.GetUserAsync(authState.User);
 
         if (user == null)
             return;
@@ -289,8 +261,6 @@
         await IsVisibleChanged.InvokeAsync(false);
 
         TransactionData = new();
-        SelectedCategoryId = null;
-        SelectedSubCategoryId = null;
         SubCategories.Clear();
     }
 

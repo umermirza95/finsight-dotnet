@@ -1,8 +1,8 @@
 @inherits LayoutComponentBase
 @inject NavigationManager Nav
 
-<div class="flex h-screen bg-white">
-    <div class="w-52 bg-primary p-4 flex flex-col justify-between shadow-2xl rounded-3xl m-2">
+<div class="flex flex-col md:flex-row h-screen bg-white">
+    <div class="hidden md:flex w-52 bg-primary p-4  flex-col justify-between shadow-2xl rounded-3xl m-2">
 
         <div class="flex flex-col flex-1">
             <span class="text-2xl font-semibold text-gray-800 text-center">FINSIGHT</span>
@@ -35,6 +35,10 @@
     <main class="flex-1 overflow-y-auto my-8 mx-4">
         @Body
     </main>
+
+    <div class="md:hidden flex h-12 w-full bg-primary">
+
+    </div>
 </div>
 
 @code {
