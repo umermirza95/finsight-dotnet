@@ -62,8 +62,8 @@
             <div class="grid gap-4 mb-4 @(SubCategories.Any() ? "grid-cols-2" : "grid-cols-1")">
                 <div>
                     <label class="block mb-1">Category</label>
-                    <InputSelect @bind-Value="TransactionData.CategoryId"
-                        class="w-full h-12 rounded-lg border-gray-300 border px-2" @onchange="OnCategoryChanged">
+                    <InputSelect @bind-Value="SelectedCategoryId"
+                        class="w-full h-12 rounded-lg border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-800 border px-2">
                         <option value="">Select</option>
                         @foreach (var cat in Categories)
                         {
@@ -123,7 +123,7 @@
                    resize-none leading-tight" />
 
                     <!-- Hidden file input -->
-                    <div id="fileInputContainer" style="display:none">
+                    <div id="fileInputContainer" class="absolute w-0 h-0 opacity-0 overflow-hidden -z-10">
                         <InputFile OnChange="OnFilesSelected" multiple />
                     </div>
 
@@ -187,6 +187,17 @@
     private List<FSCurrency> SupportedCurrencies = [];
     private Dictionary<IBrowserFile, string> FilePreviews = new();
     FSUser? user = new();
+    private string _selectedCategoryId= string.Empty;
+    private string SelectedCategoryId
+    {
+        get => _selectedCategoryId;
+        set
+        {
+            if (_selectedCategoryId == value) return;
+            _selectedCategoryId = value;
+            OnCategoryChanged(_selectedCategoryId);
+        }
+    }
 
     private async Task TriggerFilePicker()
     {
@@ -223,7 +234,8 @@
 
         if (user != null)
         {
-            TransactionData.Currency = user.DefaultCurrency ?? "USD";
+            TransactionData.Currency = "PKR";// user.DefaultCurrency ?? "USD";
+            TransactionData.Type = FSTransactionType.expense;
             TransactionData.Date = DateOnly.FromDateTime(DateTime.Now);
             TransactionData.CategoryId = null;
             Categories = await CategoryService.GetCategoriesAsync(user.Id);
@@ -232,18 +244,18 @@
         }
     }
 
-    private void OnCategoryChanged(ChangeEventArgs e)
+    private void OnCategoryChanged(string categoryId)
     {
 
-        if (!Guid.TryParse(e.Value?.ToString(), out var categoryId))
+        if (!Guid.TryParse(categoryId, out var categoryIdGuid))
         {
             SubCategories.Clear();
             return;
         }
 
-        TransactionData.CategoryId = categoryId;
+        TransactionData.CategoryId = categoryIdGuid;
 
-        var category = Categories.FirstOrDefault(c => c.Id == categoryId);
+        var category = Categories.FirstOrDefault(c => c.Id == categoryIdGuid);
 
         SubCategories = category?.SubCategories?.Any() == true
         ? category.SubCategories.ToList()
