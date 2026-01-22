@@ -12,6 +12,8 @@ public class AppDbContext : IdentityDbContext<FSUser>
     public DbSet<FSExchangeRate> FSExchangeRates { get; set; }
     public DbSet<FSCurrency> FSCurrencies { get; set; }
 
+    public DbSet<FSFile> FSFiles { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -88,6 +90,12 @@ public class AppDbContext : IdentityDbContext<FSUser>
         modelBuilder.Entity<FSExchangeRate>()
        .HasIndex(e => new { e.From, e.To, e.Date })
        .IsUnique();
+
+        modelBuilder.Entity<FSFile>()
+        .HasOne(f => f.Transaction)
+        .WithMany(t => t.Files)
+        .HasForeignKey(f => f.FSTransactionId)
+        .OnDelete(DeleteBehavior.Cascade);
 
     }
 }

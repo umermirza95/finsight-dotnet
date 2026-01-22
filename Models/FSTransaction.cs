@@ -38,6 +38,8 @@ namespace Finsight.Models
 
         public FSTransactionSubType? SubType { get; set; }
 
+        public ICollection<FSFile> Files { get; set; } = [];
+
 
     }
 }
