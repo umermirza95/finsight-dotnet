@@ -7,10 +7,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Finsight.Services
 {
-    public class FSTransactionService(AppDbContext context, IExchangeRateService fxService) : ITransactionService
+    public class FSTransactionService(AppDbContext context, IExchangeRateService fxService, IFileService fileService) : ITransactionService
     {
         private readonly AppDbContext _context = context;
         private readonly IExchangeRateService exchangeRateService = fxService;
+        private readonly IFileService _fileService = fileService;
 
         public async Task<IEnumerable<FSTransactionDTO>> GetTransactionsInDefaultCurrencyAsync(GetTransactionsQuery query, string userId)
         {
@@ -21,7 +22,7 @@ namespace Finsight.Services
       from r in _context.FSExchangeRates
           .Where(r => r.From == t.FSCurrencyCode && r.To == defaultCurrency && r.Date == t.Date)
           .DefaultIfEmpty()
-      where t.FSUserId == userId 
+      where t.FSUserId == userId
         && t.Date >= query.From
         && t.Date <= query.To
         && (!query.Type.HasValue || t.Type == query.Type)
@@ -115,9 +116,23 @@ namespace Finsight.Services
 
         public async Task<FSTransaction> AddTransactionAsync(CreateTransactionCommand command, string userId)
         {
+            var transactionId = Guid.NewGuid();
+            var fsFiles = new List<FSFile>();
+            foreach (var file in command.Attachments)
+            {
+                var filePath = await _fileService.UploadFileAsync(file, userId);
+                fsFiles.Add(new FSFile
+                {
+                    Id = Guid.NewGuid(),
+                    FileName = file.Name,
+                    FilePath = filePath,
+                    UploadedAt = DateTime.UtcNow,
+                    FSTransactionId = transactionId
+                });
+            }
             var transaction = new FSTransaction
             {
-                Id = Guid.NewGuid(),
+                Id = transactionId,
                 FSUserId = userId,
                 Amount = command.Amount,
                 FSCategoryId = command.CategoryId ?? throw new ArgumentNullException("CategoryId is required"),
@@ -128,7 +143,8 @@ namespace Finsight.Services
                 SubType = command.SubType,
                 Mode = command.Mode,
                 Date = command.Date ?? DateOnly.FromDateTime(DateTime.UtcNow),
-                UpdatedAt = DateTime.UtcNow
+                UpdatedAt = DateTime.UtcNow,
+                Files = fsFiles
             };
             _context.Transactions.Add(transaction);
             await _context.SaveChangesAsync();

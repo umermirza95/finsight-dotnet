@@ -25,6 +25,7 @@ builder.Services.AddScoped<IFSUserService, FSUserService>();
 builder.Services.AddScoped<ICategoryService, FSCategoryService>();
 builder.Services.AddScoped<ITransactionService, FSTransactionService>();
 builder.Services.AddScoped<IExchangeRateService, FSExchangeRateService>();
+builder.Services.AddScoped<IFileService, FSLinuxFile>();
 builder.Services.AddHttpClient<IExchangeRateService, FSExchangeRateService>();
 
 
