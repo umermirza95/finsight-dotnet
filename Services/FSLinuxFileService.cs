@@ -4,10 +4,10 @@ using Microsoft.AspNetCore.Components.Forms;
 
 namespace Finsight.Services
 {
-    public class FSLinuxFile(AppDbContext context) : IFileService
+    public class FSLinuxFile(IConfiguration config) : IFileService
     {
-        private readonly string _basePath = "/var/www/finsight/uploads";
-         private readonly AppDbContext _context = context;
+
+        private readonly string _basePath = config["StorageSettings:UploadPath"] ?? "";
         public Task DeleteFileAsync(Guid fileId)
         {
             throw new NotImplementedException();

@@ -14,6 +14,9 @@ namespace Finsight.Models
 
         public required DateTime UploadedAt { get; set; }
 
+        [ForeignKey(nameof(FSUser))]
+        public required string FSUserId { get; set; } 
+
         [ForeignKey(nameof(Transaction))]
         public Guid? FSTransactionId { get; set; }
 

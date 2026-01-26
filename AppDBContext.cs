@@ -91,11 +91,19 @@ public class AppDbContext : IdentityDbContext<FSUser>
        .HasIndex(e => new { e.From, e.To, e.Date })
        .IsUnique();
 
-        modelBuilder.Entity<FSFile>()
-        .HasOne(f => f.Transaction)
-        .WithMany(t => t.Files)
-        .HasForeignKey(f => f.FSTransactionId)
-        .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<FSFile>(entity =>
+        {
+            entity
+              .HasOne<FSUser>()
+              .WithMany()
+              .HasForeignKey(f => f.FSUserId)
+              .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(f => f.Transaction)
+                .WithMany(t => t.Files)
+                .HasForeignKey(f => f.FSTransactionId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
 
     }
 }

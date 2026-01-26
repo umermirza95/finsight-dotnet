@@ -127,7 +127,8 @@ namespace Finsight.Services
                     FileName = file.Name,
                     FilePath = filePath,
                     UploadedAt = DateTime.UtcNow,
-                    FSTransactionId = transactionId
+                    FSTransactionId = transactionId,
+                    FSUserId = userId
                 });
             }
             var transaction = new FSTransaction
