@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using Finsight.Enums;
@@ -22,5 +20,7 @@ namespace Finsight.Models
 
         // Navigation property
         public ICollection<FSSubCategory> SubCategories { get; set; } = [];
+
+        public ICollection<FSBudgetCategory> BudgetCategories { get; set; } = [];
     }
 }

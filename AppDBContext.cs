@@ -11,7 +11,9 @@ public class AppDbContext : IdentityDbContext<FSUser>
     public DbSet<FSTransaction> Transactions { get; set; }
     public DbSet<FSExchangeRate> FSExchangeRates { get; set; }
     public DbSet<FSCurrency> FSCurrencies { get; set; }
-
+    public DbSet<FSBudget> FSBudgets { get; set; }
+    public DbSet<FSBudgetPeriod> FSBudgetPeriods { get; set; }
+    public DbSet<FSBudgetCategory> FSBudgetCategories { get; set; }
     public DbSet<FSFile> FSFiles { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -29,6 +31,49 @@ public class AppDbContext : IdentityDbContext<FSUser>
             .WithMany()
             .HasForeignKey(t => t.FSUserId)
             .OnDelete(DeleteBehavior.Restrict);
+        
+
+        modelBuilder.Entity<FSBudget>(entity=>
+        {
+            entity
+                .HasOne<FSUser>()
+                .WithMany()
+                .HasForeignKey(b => b.FSUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity
+               .HasOne<FSCurrency>()
+               .WithMany()
+               .HasForeignKey(b => b.FSCurrencyCode)
+               .OnDelete(DeleteBehavior.Restrict);
+
+            entity.Property(b => b.Frequency).HasConversion<string>();
+        });
+
+        modelBuilder.Entity<FSBudgetCategory>().HasKey(bc => new { bc.BudgetId, bc.CategoryId });
+
+        modelBuilder.Entity<FSBudgetCategory>(entity=>
+        {
+                entity
+                .HasOne(bc => bc.Budget)
+                .WithMany(b => b.BudgetCategories)
+                .HasForeignKey(bc => bc.BudgetId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+              entity
+                .HasOne(bc => bc.Category)
+                .WithMany(c => c.BudgetCategories)
+                .HasForeignKey(bc => bc.CategoryId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<FSBudgetPeriod>()
+                .HasOne(p => p.Budget)
+                .WithMany(b => b.Periods)
+                .HasForeignKey(p => p.BudgetId)
+                .OnDelete(DeleteBehavior.Cascade);
+        
+
 
 
         modelBuilder.Entity<FSTransaction>(entity =>

@@ -19,4 +19,12 @@ namespace Finsight.Enums
         transfer,
         online
     }
+
+    public enum BudgetFrequency
+    {
+        Daily,
+        Weekly,
+        Monthly,
+        Yearly
+    }
 }
