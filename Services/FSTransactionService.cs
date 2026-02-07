@@ -105,10 +105,23 @@ namespace Finsight.Services
             DateOnly transactionDate = command.Date ?? DateOnly.FromDateTime(DateTime.UtcNow);
             FSCurrency transactionCurrency = new() { Code = command.Currency };
             FSCurrency defaultCurrency = new() { Code = user?.DefaultCurrency ?? "USD" };
-            DateOnly exchangeDate = transactionDate;
-            if (command.Currency != defaultCurrency.Code)
+            var budgetCurrencies = await _context.FSBudgets
+                                    .Where(b => b.FSUserId == userId &&
+                                    b.StartDate <= transactionDate &&
+                                    b.FSCurrencyCode != command.Currency &&
+                                    b.BudgetCategories.Any(bc => bc.CategoryId == command.CategoryId))
+                                    .Select(b => new FSCurrency { Code = b.FSCurrencyCode })
+                                    .Distinct()
+                                    .ToListAsync();
+            var targetCurrencies = new List<FSCurrency>();
+            if (command.Currency != defaultCurrency.Code && !budgetCurrencies.Any(c => c.Code == defaultCurrency.Code))
             {
-                await exchangeRateService.GetExchangeRateAsync(transactionCurrency, defaultCurrency, exchangeDate);
+                targetCurrencies.Add(defaultCurrency);
+            }
+            if (targetCurrencies.Count != 0)
+            {
+                var source = new FSCurrency { Code = command.Currency };
+                await exchangeRateService.GetExchangeRatesAsync(source, targetCurrencies, transactionDate);
             }
             return await AddTransactionAsync(command, userId);
         }

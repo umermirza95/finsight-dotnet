@@ -37,6 +37,35 @@ namespace Finsight.Services
             {
                 return exchangeRate;
             }
+            exchangeRate = await FetchExchangeRateFromAPI(from, to, date);
+            _context.FSExchangeRates.Add(exchangeRate);
+            await _context.SaveChangesAsync();
+            return exchangeRate;
+        }
+
+        public async Task<List<FSExchangeRate>> GetExchangeRatesAsync(FSCurrency source, List<FSCurrency> targets, DateOnly date)
+        {
+            var targetCodes = targets.Select(t => t.Code).ToList();
+            var existingRates = await _context.FSExchangeRates
+                                .Where(fx => fx.From == source.Code &&
+                                targetCodes.Contains(fx.To) &&
+                                fx.Date == date)
+                                .ToListAsync();
+            var existingTargetCodes = existingRates.Select(r => r.To).ToHashSet();
+            var missingTargets = targets.Where(t => !existingTargetCodes.Contains(t.Code)).ToList();
+            if (missingTargets.Count != 0)
+            {
+                var fetchTasks = missingTargets.Select(target => FetchExchangeRateFromAPI(source, target, date));
+                FSExchangeRate[] newRates = await Task.WhenAll(fetchTasks);
+                _context.FSExchangeRates.AddRange(newRates);
+                await _context.SaveChangesAsync();
+                existingRates.AddRange(newRates);
+            }
+            return existingRates;
+        }
+
+        private async Task<FSExchangeRate> FetchExchangeRateFromAPI(FSCurrency from, FSCurrency to, DateOnly date)
+        {
             var apiUrl = $"{_config["ExchangeRateApi:BaseUrl"]}?source={from.Code}&target={to.Code}&time={date.ToString("yyyy-MM-dd")}";
             var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _config["ExchangeRateApi:ApiKey"]);
@@ -47,9 +76,7 @@ namespace Finsight.Services
             using var doc = JsonDocument.Parse(body);
             var rateElement = doc.RootElement[0].GetProperty("rate");
             decimal rate = rateElement.GetDecimal();
-            exchangeRate = new FSExchangeRate { Date = date, ExchangeRate = rate, From = from.Code, To = to.Code };
-            _context.FSExchangeRates.Add(exchangeRate);
-            await _context.SaveChangesAsync();
+            FSExchangeRate exchangeRate = new FSExchangeRate { Date = date, ExchangeRate = rate, From = from.Code, To = to.Code };
             return exchangeRate;
         }
     }
