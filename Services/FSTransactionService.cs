@@ -7,14 +7,15 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Finsight.Services
 {
-    public class FSTransactionService(AppDbContext context, IExchangeRateService fxService, IFileService fileService) : ITransactionService
+    public class FSTransactionService(IDbContextFactory<AppDbContext> dbFactory, IExchangeRateService fxService, IFileService fileService) : ITransactionService
     {
-        private readonly AppDbContext _context = context;
+        private readonly IDbContextFactory<AppDbContext> _dbFactory = dbFactory;
         private readonly IExchangeRateService exchangeRateService = fxService;
         private readonly IFileService _fileService = fileService;
 
         public async Task<IEnumerable<FSTransactionDTO>> GetTransactionsInDefaultCurrencyAsync(GetTransactionsQuery query, string userId)
         {
+            using var _context = await _dbFactory.CreateDbContextAsync();
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
             string defaultCurrency = user?.DefaultCurrency ?? "USD";
             var result = await (
@@ -80,6 +81,7 @@ namespace Finsight.Services
 
         public async Task<IEnumerable<FSTransaction>> GetTransactionsAsync(GetTransactionsQuery query, string userId)
         {
+            using var _context = await _dbFactory.CreateDbContextAsync();
             var startDate = query.From;
             var endDate = query.To;
             var q = _context.Transactions
@@ -101,9 +103,9 @@ namespace Finsight.Services
 
         public async Task<FSTransaction> AddTransactionWithFXAsync(CreateTransactionCommand command, string userId)
         {
+            using var _context = await _dbFactory.CreateDbContextAsync();
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
             DateOnly transactionDate = command.Date ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            FSCurrency transactionCurrency = new() { Code = command.Currency };
             FSCurrency defaultCurrency = new() { Code = user?.DefaultCurrency ?? "USD" };
             var budgetCurrencies = await _context.FSBudgets
                                     .Where(b => b.FSUserId == userId &&
@@ -129,6 +131,7 @@ namespace Finsight.Services
 
         public async Task<FSTransaction> AddTransactionAsync(CreateTransactionCommand command, string userId)
         {
+            using var _context = await _dbFactory.CreateDbContextAsync();
             var transactionId = Guid.NewGuid();
             var fsFiles = new List<FSFile>();
             foreach (var file in command.Attachments)
@@ -167,6 +170,7 @@ namespace Finsight.Services
 
         public async Task<bool> DeleteTransactionAsync(Guid id, string userId)
         {
+            using var _context = await _dbFactory.CreateDbContextAsync();
             var transaction = await _context.Transactions.FirstOrDefaultAsync(t => t.Id == id && t.FSUserId == userId);
 
             if (transaction == null)

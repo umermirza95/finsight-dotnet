@@ -2,23 +2,219 @@
 @attribute [Authorize]
 
 @using Finsight.Models
+@using Finsight.Enums
+@using Finsight.DTOs
+@using Finsight.Queries
+@using Finsight.Interfaces
+@using Microsoft.AspNetCore.Components.Authorization
 @using finsight_dotnet.Components.Transactions
 
+@inject ITransactionService TransactionService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ICategoryService CategoryService
 
-<div>
-    <div class="flex justify-end">
+<div class="max-w-6xl mx-auto p-6">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold text-gray-800">Transactions</h1>
         <button @onclick="OpenModal"
-            class=" py-2 px-4 text-sm rounded-lg bg-primary text-primary-text  flex items-center justify-center shadow-lg cursor-pointer focus:outline-none">
-            + Add New
+                class="py-2 px-6 text-sm font-medium rounded-xl bg-black text-white flex items-center gap-2 shadow-lg hover:bg-gray-800 transition-all cursor-pointer">
+            <span class="material-symbols-outlined text-sm">add</span>
+            Add New
         </button>
+    </div>
+
+    @* Main White Card *@
+    <div class="bg-white rounded-[2.5rem] p-8 shadow-sm border border-gray-100">
+
+        <div class="flex gap-3 w-full">
+            <div class="relative flex-grow">
+                <span
+                class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xl">search</span>
+                <input type="text" placeholder="Search transactions"
+                       class="w-full  pl-10 pr-4 py-2.5 bg-gray-50 border-none rounded-full text-sm focus:ring-2 focus:ring-gray-200 outline-none" />
+            </div>
+            <button class="p-2.5 bg-gray-50 rounded-full hover:bg-gray-100 text-gray-600 transition-colors">
+                <span class="material-symbols-outlined text-xl">tune</span>
+            </button>
+        </div>
+
+        @* Filter Chips & Balance *@
+        <div class="flex flex-wrap justify-between items-end gap-4 mb-10">
+            @* Income Card *@
+            <div class="flex items-center gap-4 p-5 bg-emerald-50/50 rounded-3xl border border-emerald-100">
+                <div
+                    class="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center shadow-sm shadow-emerald-200">
+                    <span class="material-symbols-outlined text-white">trending_up</span>
+                </div>
+                <div>
+                    <span class="text-emerald-600 text-xs font-bold uppercase tracking-wider">Total Income</span>
+                    <div class="text-2xl font-extrabold text-emerald-950">$@totalIncome.ToString("N2")</div>
+                </div>
+            </div>
+
+            @* Expense Card *@
+            <div class="flex items-center gap-4 p-5 bg-rose-50/50 rounded-3xl border border-rose-100">
+                <div
+                    class="w-12 h-12 bg-rose-500 rounded-2xl flex items-center justify-center shadow-sm shadow-rose-200">
+                    <span class="material-symbols-outlined text-white">trending_down</span>
+                </div>
+                <div>
+                    <span class="text-rose-600 text-xs font-bold uppercase tracking-wider">Total Expense</span>
+                    <div class="text-2xl font-extrabold text-rose-950">$@totalExpense.ToString("N2")</div>
+                </div>
+            </div>
+        </div>
+
+        @* Transactions List *@
+        <div class="space-y-1">
+
+
+            @if (transactions == null)
+            {
+                <div class="flex justify-center py-20">
+                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+                </div>
+            }
+            else if (!transactions.Any())
+            {
+                <div class="text-center py-20 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-100">
+                    <span class="material-symbols-outlined text-5xl text-gray-300 mb-2">receipt_long</span>
+                    <p class="text-gray-500">No transactions found for this period.</p>
+                </div>
+            }
+            else
+            {
+                @foreach (var tx in transactions)
+                {
+                    <div
+                        class="flex items-center justify-between p-4 hover:bg-gray-50 rounded-[1.25rem] transition-all cursor-pointer group">
+                        <div class="flex items-center gap-4">
+                            @* Icon Container *@
+                            <div class="w-14 h-14 rounded-2xl flex items-center justify-center @GetCategoryStyles(tx).Color">
+                                <span class="material-symbols-outlined text-2xl">@GetCategoryStyles(tx).Icon</span>
+                            </div>
+
+                            @* Label & Category *@
+                            <div>
+                                <p class="font-bold text-gray-800">@TransactionCategory(tx.CategoryId)</p>
+                                @if (!string.IsNullOrEmpty(tx.Comment) || tx.SubCategoryId == Guid.Empty)
+                                {
+                                    <span class="text-xs px-2 py-1 bg-indigo-50 text-indigo-500 rounded-lg font-medium uppercase">
+                                        @(!string.IsNullOrEmpty(tx.Comment) ? tx.Comment : TransactionSubCategory(tx.CategoryId,
+                            tx.SubCategoryId))
+                                    </span>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-12">
+                            <span class="text-sm font-medium text-gray-400">@tx.Date.ToString("MMM dd, yyyy")</span>
+                            <div class="flex items-center gap-4 min-w-[140px] justify-end">
+                                <span
+                                    class="text-lg font-bold @(tx.Type == FSTransactionType.expense ? "text-gray-900" : "text-emerald-500")">
+                                    @(tx.Type == FSTransactionType.expense ? "-" : "+")@tx.Amount.ToString("C2")
+                                </span>
+                                <span
+                                class="material-symbols-outlined text-gray-300 group-hover:text-gray-600 group-hover:translate-x-1 transition-all">chevron_right</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
     </div>
     <TransactionModal @bind-IsVisible="isModalVisible" />
 </div>
+
+
+
 @code {
     private bool isModalVisible = false;
+    private IEnumerable<FSTransactionDTO>? transactions;
+    private GetTransactionsQuery query = new GetTransactionsQuery();
+    private decimal totalBalance = 8405.00m;
+    private List<FSCategory> Categories = [];
+    private decimal totalIncome => transactions?.Where(t => t.Type == FSTransactionType.income).Sum(t => t.Amount) ?? 0;
+    private decimal totalExpense => transactions?.Where(t => t.Type == FSTransactionType.expense).Sum(t => t.Amount) ?? 0;
 
-    private void OpenModal()
+    protected override async Task OnInitializedAsync()
     {
-        isModalVisible = true;
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        query.ApplyDefaultDateRange();
+        if (!string.IsNullOrEmpty(userId))
+        {
+            Categories = await CategoryService.GetCategoriesAsync(userId);
+            transactions = await TransactionService.GetTransactionsInDefaultCurrencyAsync(query, userId);
+        }
+    }
+
+    private void OpenModal() => isModalVisible = true;
+
+    private string TransactionCategory(Guid id)
+    {
+        var category = Categories.FirstOrDefault(c => c.Id == id);
+        return category != null ? category.Name : "General";
+    }
+
+    private string TransactionSubCategory(Guid categoryId, Guid? subCategoryId)
+    {
+        var category = Categories.FirstOrDefault(c => c.Id == categoryId);
+        if (category != null)
+        {
+            var subCategory = category.SubCategories.FirstOrDefault(sc => sc.Id == subCategoryId);
+            return subCategory != null ? subCategory.Name : string.Empty;
+        }
+        return string.Empty;
+    }
+
+
+    private (string Icon, string Color) GetCategoryStyles(FSTransactionDTO tx)
+    {
+        var categoryName = TransactionCategory(tx.CategoryId);
+        var key = (categoryName ?? tx.Type.ToString()).ToLower();
+
+        return key switch
+        {
+            // Income & Financial
+            "dividend" => ("payments", "bg-emerald-100 text-emerald-700"),
+            "capital gains" => ("trending_up", "bg-teal-100 text-teal-700"),
+            "income" => ("account_balance", "bg-green-100 text-green-700"),
+            "savings account" => ("savings", "bg-cyan-100 text-cyan-700"),
+            "allowances" => ("wallet", "bg-lime-100 text-lime-700"),
+        
+            // Religious & Giving
+            "zakat" => ("volunteer_activism", "bg-rose-100 text-rose-700"),
+            "gifts" => ("redeem", "bg-pink-100 text-pink-700"),
+
+            // Household
+            "home" => ("home", "bg-indigo-100 text-indigo-700"),
+            "utilities" => ("bolt", "bg-amber-100 text-amber-700"),
+            "rent" => ("apartment", "bg-blue-100 text-blue-700"),
+            "groceries" => ("shopping_cart", "bg-violet-100 text-violet-700"),
+            "healthcare" => ("medical_services", "bg-red-100 text-red-700"),
+
+            // Lifestyle
+            "vacations" => ("flight", "bg-sky-100 text-sky-700"),
+            "restaurants" => ("restaurant", "bg-orange-100 text-orange-700"),
+            "subscriptions" => ("subscriptions", "bg-purple-100 text-purple-700"),
+            "entertainment" => ("theater_comedy", "bg-fuchsia-100 text-fuchsia-700"),
+            "business" => ("business_center", "bg-slate-100 text-slate-700"),
+
+            // Family & Personal
+            "child" => ("child_care", "bg-yellow-100 text-yellow-700"),
+            "pet" => ("pets", "bg-stone-100 text-stone-700"),
+
+            // Transport
+            "transport" => ("directions_car", "bg-gray-100 text-gray-700"),
+
+            // Compliance & Miscellaneous
+            "tax" => ("description", "bg-brown-100 text-brown-700"),
+            "untracked" => ("question_mark", "bg-zinc-100 text-zinc-600"),
+
+            // Fallback
+            _ => ("category", "bg-gray-100 text-gray-600")
+        };
     }
 }
