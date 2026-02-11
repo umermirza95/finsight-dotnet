@@ -19,23 +19,24 @@ namespace Finsight.Services
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
             string defaultCurrency = user?.DefaultCurrency ?? "USD";
             var result = await (
-      from t in _context.Transactions
-      from r in _context.FSExchangeRates
-          .Where(r => r.From == t.FSCurrencyCode && r.To == defaultCurrency && r.Date == t.Date)
-          .DefaultIfEmpty()
-      where t.FSUserId == userId
-        && t.Date >= query.From
-        && t.Date <= query.To
-        && (!query.Type.HasValue || t.Type == query.Type)
-        && (!query.CategoryId.HasValue || t.FSCategoryId == query.CategoryId)
-      select new
-      {
-          Transaction = t,
-          Rate = r
-      }
-  )
-  .AsNoTracking()
-  .ToListAsync();
+                from t in _context.Transactions
+                from r in _context.FSExchangeRates
+                .Where(r => r.From == t.FSCurrencyCode && r.To == defaultCurrency && r.Date == t.Date)
+                .DefaultIfEmpty()
+                where t.FSUserId == userId
+                && t.Date >= query.From
+                && t.Date <= query.To
+                && (!query.Type.HasValue || t.Type == query.Type)
+                && (!query.CategoryId.HasValue || t.FSCategoryId == query.CategoryId)
+                && ( string.IsNullOrEmpty(query.SearchQuery) || EF.Functions.ILike(t.Comment!, $"%{query.SearchQuery}%"))
+                select new
+                {
+                    Transaction = t,
+                    Rate = r
+                }
+            )
+            .AsNoTracking()
+            .ToListAsync();
 
             // Check and throw for missing exchange rates
             var missingRates = result

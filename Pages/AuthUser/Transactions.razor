@@ -13,7 +13,7 @@
 @inject AuthenticationStateProvider AuthStateProvider
 @inject ICategoryService CategoryService
 
-<div class="max-w-6xl mx-auto p-6">
+<div class="max-w-6xl mx-auto">
     <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-bold text-gray-800">Transactions</h1>
         <button @onclick="OpenModal"
@@ -24,107 +24,182 @@
     </div>
 
     @* Main White Card *@
-    <div class="bg-white rounded-[2.5rem] p-8 shadow-sm border border-gray-100">
+    <div class="bg-white rounded-3xl p-4 shadow-sm border border-gray-100">
 
-        <div class="flex gap-3 w-full">
+        <div class="flex gap-3 w-full mb-6">
+            @* Search Input *@
             <div class="relative flex-grow">
                 <span
                 class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xl">search</span>
-                <input type="text" placeholder="Search transactions"
-                       class="w-full  pl-10 pr-4 py-2.5 bg-gray-50 border-none rounded-full text-sm focus:ring-2 focus:ring-gray-200 outline-none" />
-            </div>
-            <button class="p-2.5 bg-gray-50 rounded-full hover:bg-gray-100 text-gray-600 transition-colors">
-                <span class="material-symbols-outlined text-xl">tune</span>
-            </button>
-        </div>
+                <input type="text" placeholder="Search comments..." @bind="query.SearchQuery" @onkeyup="HandleKeyUp"
+                       class="w-full pl-10 pr-10 py-2.5 bg-gray-50 border-none rounded-full text-sm focus:ring-2 focus:ring-gray-200 outline-none" />
 
-        @* Filter Chips & Balance *@
-        <div class="flex flex-wrap justify-between items-end gap-4 mb-10">
-            @* Income Card *@
-            <div class="flex items-center gap-4 p-5 bg-emerald-50/50 rounded-3xl border border-emerald-100">
-                <div
-                    class="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center shadow-sm shadow-emerald-200">
-                    <span class="material-symbols-outlined text-white">trending_up</span>
-                </div>
-                <div>
-                    <span class="text-emerald-600 text-xs font-bold uppercase tracking-wider">Total Income</span>
-                    <div class="text-2xl font-extrabold text-emerald-950">$@totalIncome.ToString("N2")</div>
-                </div>
-            </div>
-
-            @* Expense Card *@
-            <div class="flex items-center gap-4 p-5 bg-rose-50/50 rounded-3xl border border-rose-100">
-                <div
-                    class="w-12 h-12 bg-rose-500 rounded-2xl flex items-center justify-center shadow-sm shadow-rose-200">
-                    <span class="material-symbols-outlined text-white">trending_down</span>
-                </div>
-                <div>
-                    <span class="text-rose-600 text-xs font-bold uppercase tracking-wider">Total Expense</span>
-                    <div class="text-2xl font-extrabold text-rose-950">$@totalExpense.ToString("N2")</div>
-                </div>
-            </div>
-        </div>
-
-        @* Transactions List *@
-        <div class="space-y-1">
-
-
-            @if (transactions == null)
-            {
-                <div class="flex justify-center py-20">
-                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-                </div>
-            }
-            else if (!transactions.Any())
-            {
-                <div class="text-center py-20 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-100">
-                    <span class="material-symbols-outlined text-5xl text-gray-300 mb-2">receipt_long</span>
-                    <p class="text-gray-500">No transactions found for this period.</p>
-                </div>
-            }
-            else
-            {
-                @foreach (var tx in transactions)
+                @if (!string.IsNullOrEmpty(query.SearchQuery))
                 {
-                    <div
-                        class="flex items-center justify-between p-4 hover:bg-gray-50 rounded-[1.25rem] transition-all cursor-pointer group">
-                        <div class="flex items-center gap-4">
-                            @* Icon Container *@
-                            <div class="w-14 h-14 rounded-2xl flex items-center justify-center @GetCategoryStyles(tx).Color">
-                                <span class="material-symbols-outlined text-2xl">@GetCategoryStyles(tx).Icon</span>
-                            </div>
+                    <button @onclick="ClearSearch"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
+                        <span class="material-symbols-outlined text-xl">close</span>
+                    </button>
+                }
+            </div>
 
-                            @* Label & Category *@
+            @* Filter Button & Popup *@
+            <div class="relative">
+                <button @onclick="ToggleFilter"
+                        class="cursor-pointer p-2.5 bg-gray-50 rounded-full hover:bg-gray-100 text-gray-600 transition-colors @(isFilterOpen ? "ring-2 ring-indigo-500" : "")">
+                    <span class="material-symbols-outlined text-xl">tune</span>
+                </button>
+
+                @if (isFilterOpen)
+                {
+                    @* Added a slightly wider width (w-80) and more internal padding (p-6) *@
+                    <div class="absolute right-0 mt-2 w-80 bg-white rounded-3xl shadow-2xl border border-gray-100 z-50 p-4">
+                        <h3 class="font-bold text-gray-900 text-lg mb-5">Filter Transactions</h3>
+                        <div class="space-y-4">
+                            @* Type Filter *@
                             <div>
-                                <p class="font-bold text-gray-800">@TransactionCategory(tx.CategoryId)</p>
-                                @if (!string.IsNullOrEmpty(tx.Comment) || tx.SubCategoryId == Guid.Empty)
-                                {
-                                    <span class="text-xs px-2 py-1 bg-indigo-50 text-indigo-500 rounded-lg font-medium uppercase">
-                                        @(!string.IsNullOrEmpty(tx.Comment) ? tx.Comment : TransactionSubCategory(tx.CategoryId,
-                            tx.SubCategoryId))
-                                    </span>
-                                }
-                            </div>
-                        </div>
+                                <label
+                                    class="text-[11px] font-bold text-gray-400 uppercase tracking-widest ml-1">Transaction
+                                    Type</label>
+                                    <select @bind="query.Type"
+                                            class="w-full mt-1.5 p-3 bg-gray-50 border-2 border-transparent focus:border-gray-100 rounded-xl text-sm font-medium outline-none appearance-none cursor-pointer">
+                                        <option value="">All Types</option>
+                                        <option value="@FSTransactionType.income">Income Only</option>
+                                        <option value="@FSTransactionType.expense">Expense Only</option>
+                                    </select>
+                                </div>
 
-                        <div class="flex items-center gap-12">
-                            <span class="text-sm font-medium text-gray-400">@tx.Date.ToString("MMM dd, yyyy")</span>
-                            <div class="flex items-center gap-4 min-w-[140px] justify-end">
-                                <span
-                                    class="text-lg font-bold @(tx.Type == FSTransactionType.expense ? "text-gray-900" : "text-emerald-500")">
-                                    @(tx.Type == FSTransactionType.expense ? "-" : "+")@tx.Amount.ToString("C2")
-                                </span>
-                                <span
-                                class="material-symbols-outlined text-gray-300 group-hover:text-gray-600 group-hover:translate-x-1 transition-all">chevron_right</span>
+                                @* Date Range *@
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label
+                                        class="text-xs font-bold text-gray-400 uppercase tracking-widest ml-1">From</label>
+                                        <input type="date" @bind="query.From"
+                                               class="w-full mt-1.5 p-3 bg-gray-50 border-2 border-transparent focus:border-gray-100 rounded-xl text-sm font-medium outline-none cursor-pointer" />
+                                    </div>
+                                    <div>
+                                        <label          class="text-xs font-bold text-gray-400 uppercase tracking-widest ml-1">To</label>
+                                        <input type="date" @bind="query.To"
+                                               class="w-full mt-1.5 p-3 bg-gray-50 border-2 border-transparent focus:border-gray-100 rounded-xl text-sm font-medium outline-none cursor-pointer" />
+                                    </div>
+                                </div>
+
+                                @* Category Filter *@
+                                <div>
+                                    <label
+                                    class="text-[11px] font-bold text-gray-400 uppercase tracking-widest ml-1">Category</label>
+                                    <select @bind="query.CategoryId"
+                                            class="w-full mt-1.5 p-3 bg-gray-50 border-2 border-transparent focus:border-gray-100 rounded-xl text-sm font-medium outline-none appearance-none cursor-pointer">
+                                        <option value="">All Categories</option>
+                                        @foreach (var cat in Categories)
+                                        {
+                                            <option value="@cat.Id">@cat.Name</option>
+                                        }
+                                    </select>
+                                </div>
+
+                                @* Action Buttons - Larger heights (py-3) *@
+                                <div class="flex flex-col gap-2 pt-4">
+                                    <button @onclick="ApplyFilters"
+                                            class="cursor-pointer w-full py-3.5 bg-black text-white rounded-xl text-sm font-bold shadow-lg hover:bg-gray-800 transition-transform active:scale-[0.98]">
+                                        Apply Filters
+                                    </button>
+                                    <button @onclick="ResetFilters"
+                                            class="cursor-pointer w-full py-3 text-gray-500 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors">
+                                        Reset to Default
+                                    </button>
+                                </div>
                             </div>
                         </div>
+                    }
+                </div>
+            </div>
+
+            @* Filter Chips & Balance *@
+            <div class="flex flex-wrap justify-between items-end gap-4 mb-10">
+                @* Income Card *@
+                <div class="flex items-center gap-4 px-4 py-2 bg-emerald-50/50 rounded-3xl border border-emerald-100">
+                    <div
+                        class="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center shadow-sm shadow-emerald-200">
+                        <span class="material-symbols-outlined text-white">trending_up</span>
+                    </div>
+                    <div>
+                        <span class="text-emerald-600 text-xs font-bold uppercase tracking-wider">Total Income</span>
+                        <div class="text-2xl font-extrabold text-emerald-950">$@totalIncome.ToString("N2")</div>
+                    </div>
+                </div>
+
+                @* Expense Card *@
+                <div class="flex items-center gap-4 px-4 py-2 bg-rose-50/50 rounded-3xl border border-rose-100">
+                    <div
+                        class="w-12 h-12 bg-rose-500 rounded-2xl flex items-center justify-center shadow-sm shadow-rose-200">
+                        <span class="material-symbols-outlined text-white">trending_down</span>
+                    </div>
+                    <div>
+                        <span class="text-rose-600 text-xs font-bold uppercase tracking-wider">Total Expense</span>
+                        <div class="text-2xl font-extrabold text-rose-950">$@totalExpense.ToString("N2")</div>
+                    </div>
+                </div>
+            </div>
+
+            @* Transactions List *@
+            <div class="space-y-8">
+
+
+                @if (transactions == null)
+                {
+                    <div class="flex justify-center py-20">
+                        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
                     </div>
                 }
-            }
+                else if (!transactions.Any())
+                {
+                    <div class="text-center py-20 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-100">
+                        <span class="material-symbols-outlined text-5xl text-gray-300 mb-2">receipt_long</span>
+                        <p class="text-gray-500">No transactions found for this period.</p>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var tx in transactions)
+                    {
+                        <div
+                            class="flex w-full items-center justify-between hover:bg-gray-50 rounded-[1.25rem] transition-all cursor-pointer group">
+                            <div class="flex items-center gap-4 w-1/2">
+                                @* Icon Container *@
+                                <div class="w-14 h-14 rounded-2xl flex shrink-0 items-center justify-center @GetCategoryStyles(tx).Color">
+                                    <span class="material-symbols-outlined text-2xl">@GetCategoryStyles(tx).Icon</span>
+                                </div>
+
+                                @* Label & Category *@
+                                <div >
+                                    <p class="font-bold text-gray-800">@TransactionCategory(tx.CategoryId)</p>
+                                    @if (!string.IsNullOrEmpty(tx.Comment) || tx.SubCategoryId == Guid.Empty)
+                                    {
+                                        <span class="text-xs px-2 py-1 bg-indigo-50 text-indigo-500 rounded-lg font-medium uppercase">
+                                            @(!string.IsNullOrEmpty(tx.Comment) ? tx.Comment : TransactionSubCategory(tx.CategoryId,
+                                tx.SubCategoryId))
+                                        </span>
+                                    }
+                                </div>
+                            </div>
+
+                            <div class="flex flex-col items-end  w-1/2 ">
+                                <span
+                                    class="text-md md:text-lg font-bold @(tx.Type == FSTransactionType.expense ? "text-gray-900" : "text-emerald-500")">
+                                    @(tx.Type == FSTransactionType.expense ? "-" : "+")@tx.Currency
+                                    @tx.BaseAmount.ToString("N2")
+                                </span>
+                                 <span class="text-sm font-medium text-gray-400">@tx.Date.ToString("MMM dd, yyyy")</span>
+                            </div>
+                            <span class="material-symbols-outlined text-gray-300 group-hover:text-gray-600 group-hover:translate-x-1 transition-all">chevron_right</span>
+                        </div>
+                    }
+                }
+            </div>
         </div>
+        <TransactionModal @bind-IsVisible="isModalVisible" />
     </div>
-    <TransactionModal @bind-IsVisible="isModalVisible" />
-</div>
 
 
 
@@ -132,22 +207,65 @@
     private bool isModalVisible = false;
     private IEnumerable<FSTransactionDTO>? transactions;
     private GetTransactionsQuery query = new GetTransactionsQuery();
-    private decimal totalBalance = 8405.00m;
     private List<FSCategory> Categories = [];
     private decimal totalIncome => transactions?.Where(t => t.Type == FSTransactionType.income).Sum(t => t.Amount) ?? 0;
     private decimal totalExpense => transactions?.Where(t => t.Type == FSTransactionType.expense).Sum(t => t.Amount) ?? 0;
-
+    private bool isFilterOpen = false;
+    private string? userId; // Store this globally for the component
     protected override async Task OnInitializedAsync()
     {
         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
         var user = authState.User;
-        var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
         query.ApplyDefaultDateRange();
+
         if (!string.IsNullOrEmpty(userId))
         {
             Categories = await CategoryService.GetCategoriesAsync(userId);
+            await RefreshData();
+        }
+    }
+
+    private async Task RefreshData()
+    {
+        if (!string.IsNullOrEmpty(userId))
+        {
+            // Note: We pass the query object which is now bound to the UI
             transactions = await TransactionService.GetTransactionsInDefaultCurrencyAsync(query, userId);
         }
+    }
+
+    private void ToggleFilter() => isFilterOpen = !isFilterOpen;
+
+    private async Task ApplyFilters()
+    {
+        isFilterOpen = false;
+        await RefreshData();
+    }
+
+    private async Task ResetFilters()
+    {
+        query = new GetTransactionsQuery();
+        query.ApplyDefaultDateRange();
+        isFilterOpen = false;
+        await RefreshData();
+    }
+
+    private async Task HandleKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            // When Enter is pressed, the @bind has already updated the query.SearchQuery
+            // because we didn't specify a different bind:event.
+            await RefreshData();
+        }
+    }
+
+    private async Task ClearSearch()
+    {
+        query.SearchQuery = string.Empty;
+        await RefreshData();
     }
 
     private void OpenModal() => isModalVisible = true;
