@@ -78,7 +78,7 @@
                                                class="w-full mt-1.5 p-3 bg-gray-50 border-2 border-transparent focus:border-gray-100 rounded-xl text-sm font-medium outline-none cursor-pointer" />
                                     </div>
                                     <div>
-                                        <label          class="text-xs font-bold text-gray-400 uppercase tracking-widest ml-1">To</label>
+                                        <label class="text-xs font-bold text-gray-400 uppercase tracking-widest ml-1">To</label>
                                         <input type="date" @bind="query.To"
                                                class="w-full mt-1.5 p-3 bg-gray-50 border-2 border-transparent focus:border-gray-100 rounded-xl text-sm font-medium outline-none cursor-pointer" />
                                     </div>
@@ -114,34 +114,37 @@
                     }
                 </div>
             </div>
-
+            
             @* Filter Chips & Balance *@
-            <div class="flex flex-wrap justify-between items-end gap-4 mb-10">
+            <div class="flex flex-col md:flex-row justify-between items-stretch sm:items-end gap-4 mb-10">
+
                 @* Income Card *@
-                <div class="flex items-center gap-4 px-4 py-2 bg-emerald-50/50 rounded-3xl border border-emerald-100">
+                <div
+                    class="flex flex-col md:flex-row items-center gap-4 px-4 py-3 bg-emerald-50/50 rounded-3xl border border-emerald-100 flex-1">
                     <div
-                        class="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center shadow-sm shadow-emerald-200">
+                        class="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center shadow-sm shadow-emerald-200 shrink-0">
                         <span class="material-symbols-outlined text-white">trending_up</span>
                     </div>
-                    <div>
+                    <div class="text-center sm:text-left">
                         <span class="text-emerald-600 text-xs font-bold uppercase tracking-wider">Total Income</span>
                         <div class="text-2xl font-extrabold text-emerald-950">$@totalIncome.ToString("N2")</div>
                     </div>
                 </div>
 
                 @* Expense Card *@
-                <div class="flex items-center gap-4 px-4 py-2 bg-rose-50/50 rounded-3xl border border-rose-100">
+                <div
+                    class="flex flex-col md:flex-row items-center gap-4 px-4 py-3 bg-rose-50/50 rounded-3xl border border-rose-100 flex-1">
                     <div
-                        class="w-12 h-12 bg-rose-500 rounded-2xl flex items-center justify-center shadow-sm shadow-rose-200">
+                        class="w-12 h-12 bg-rose-500 rounded-2xl flex items-center justify-center shadow-sm shadow-rose-200 shrink-0">
                         <span class="material-symbols-outlined text-white">trending_down</span>
                     </div>
-                    <div>
+                    <div class="text-center sm:text-left">
                         <span class="text-rose-600 text-xs font-bold uppercase tracking-wider">Total Expense</span>
                         <div class="text-2xl font-extrabold text-rose-950">$@totalExpense.ToString("N2")</div>
                     </div>
                 </div>
-            </div>
 
+            </div>
             @* Transactions List *@
             <div class="space-y-8">
 
@@ -172,7 +175,7 @@
                                 </div>
 
                                 @* Label & Category *@
-                                <div >
+                                <div>
                                     <p class="font-bold text-gray-800">@TransactionCategory(tx.CategoryId)</p>
                                     @if (!string.IsNullOrEmpty(tx.Comment) || tx.SubCategoryId == Guid.Empty)
                                     {
@@ -190,9 +193,9 @@
                                     @(tx.Type == FSTransactionType.expense ? "-" : "+")@tx.Currency
                                     @tx.BaseAmount.ToString("N2")
                                 </span>
-                                 <span class="text-sm font-medium text-gray-400">@tx.Date.ToString("MMM dd, yyyy")</span>
+                                <span class="text-sm font-medium text-gray-400">@tx.Date.ToString("MMM dd, yyyy")</span>
                             </div>
-                            <span class="material-symbols-outlined text-gray-300 group-hover:text-gray-600 group-hover:translate-x-1 transition-all">chevron_right</span>
+                            <span        class="material-symbols-outlined text-gray-300 group-hover:text-gray-600 group-hover:translate-x-1 transition-all">chevron_right</span>
                         </div>
                     }
                 }
