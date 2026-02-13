@@ -5,12 +5,8 @@ namespace Finsight.Services
 {
     public interface IExchangeRateService
     {
-        public Task<FSExchangeRate> GetExchangeRateAsync(FSCurrency from, FSCurrency to, DateOnly date);
-        public Task<List<FSExchangeRate>> GetExchangeRatesAsync(FSCurrency from, List<FSCurrency> toList, DateOnly date);
-        Task<List<FSExchangeRate>> GetExchangeRateForRangeAsync(FSCurrency from, FSCurrency to, DateOnly startDate, DateOnly endDate);
-        Task<List<FSExchangeRate>> GetExchangeRatesForRangeAsync(List<FSCurrency> from, FSCurrency to, DateOnly startDate, DateOnly endDate);
-        void LoadAllExchangeRates();
-
+        Task SaveExchangeRatesAsync(string from, List<string> toList, DateOnly date);
+        Task SaveExchangeRatesForRangeAsync(string source, string target, DateOnly startDate, DateOnly endDate);
         List<FSCurrency> SupportedCurrencies { get; }
     }
 }

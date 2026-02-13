@@ -28,7 +28,7 @@ namespace Finsight.Services
                 && t.Date <= query.To
                 && (!query.Type.HasValue || t.Type == query.Type)
                 && (!query.CategoryId.HasValue || t.FSCategoryId == query.CategoryId)
-                && ( string.IsNullOrEmpty(query.SearchQuery) || EF.Functions.ILike(t.Comment!, $"%{query.SearchQuery}%"))
+                && (string.IsNullOrEmpty(query.SearchQuery) || EF.Functions.ILike(t.Comment!, $"%{query.SearchQuery}%"))
                 select new
                 {
                     Transaction = t,
@@ -108,23 +108,21 @@ namespace Finsight.Services
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
             DateOnly transactionDate = command.Date ?? DateOnly.FromDateTime(DateTime.UtcNow);
             FSCurrency defaultCurrency = new() { Code = user?.DefaultCurrency ?? "USD" };
-            var budgetCurrencies = await _context.FSBudgets
+            var targetCurrencyCodes = await _context.FSBudgets
                                     .Where(b => b.FSUserId == userId &&
                                     b.StartDate <= transactionDate &&
                                     b.FSCurrencyCode != command.Currency &&
                                     b.BudgetCategories.Any(bc => bc.CategoryId == command.CategoryId))
-                                    .Select(b => new FSCurrency { Code = b.FSCurrencyCode })
+                                    .Select(b => b.FSCurrencyCode)
                                     .Distinct()
                                     .ToListAsync();
-            var targetCurrencies = new List<FSCurrency>();
-            if (command.Currency != defaultCurrency.Code && !budgetCurrencies.Any(c => c.Code == defaultCurrency.Code))
+            if (command.Currency != defaultCurrency.Code && !targetCurrencyCodes.Any(c => c == defaultCurrency.Code))
             {
-                targetCurrencies.Add(defaultCurrency);
+                targetCurrencyCodes.Add(defaultCurrency.Code);
             }
-            if (targetCurrencies.Count != 0)
+            if (targetCurrencyCodes.Count != 0)
             {
-                var source = new FSCurrency { Code = command.Currency };
-                await exchangeRateService.GetExchangeRatesAsync(source, targetCurrencies, transactionDate);
+                await exchangeRateService.SaveExchangeRatesAsync(command.Currency, targetCurrencyCodes, transactionDate);
             }
             return await AddTransactionAsync(command, userId);
         }

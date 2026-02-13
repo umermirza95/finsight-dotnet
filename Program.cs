@@ -27,6 +27,7 @@ builder.Services.AddScoped<ITransactionService, FSTransactionService>();
 builder.Services.AddScoped<IExchangeRateService, FSExchangeRateService>();
 builder.Services.AddScoped<IFileService, FSLinuxFile>();
 builder.Services.AddHttpClient<IExchangeRateService, FSExchangeRateService>();
+builder.Services.AddHttpClient<IFXAPIService, WiseFXAPIService>();
 
 
 
