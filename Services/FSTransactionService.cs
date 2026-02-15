@@ -16,12 +16,11 @@ namespace Finsight.Services
         public async Task<IEnumerable<FSTransactionDTO>> GetTransactionsInDefaultCurrencyAsync(GetTransactionsQuery query, string userId)
         {
             using var _context = await _dbFactory.CreateDbContextAsync();
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
-            string defaultCurrency = user?.DefaultCurrency ?? "USD";
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId) ?? throw new Exception("User not found");
             var result = await (
                 from t in _context.Transactions
                 from r in _context.FSExchangeRates
-                .Where(r => r.From == t.FSCurrencyCode && r.To == defaultCurrency && r.Date == t.Date)
+                .Where(r => r.From == t.FSCurrencyCode && r.To == user.DefaultCurrency && r.Date == t.Date)
                 .DefaultIfEmpty()
                 where t.FSUserId == userId
                 && t.Date >= query.From
@@ -42,7 +41,7 @@ namespace Finsight.Services
             var missingRates = result
                 .Where(x =>
                     x.Rate == null &&
-                    !string.Equals(x.Transaction.FSCurrencyCode, defaultCurrency, StringComparison.OrdinalIgnoreCase))
+                    !string.Equals(x.Transaction.FSCurrencyCode, user.DefaultCurrency, StringComparison.OrdinalIgnoreCase))
                 .Select(x => new
                 {
                     x.Transaction.Id,
@@ -62,7 +61,7 @@ namespace Finsight.Services
             {
                 Id = x.Transaction.Id,
                 BaseAmount = x.Transaction.Amount,
-                Amount = x.Transaction.FSCurrencyCode != defaultCurrency && x.Rate != null
+                Amount = x.Transaction.FSCurrencyCode != user.DefaultCurrency && x.Rate != null
                     ? x.Transaction.Amount * x.Rate.ExchangeRate
                     : x.Transaction.Amount,
                 CategoryId = x.Transaction.FSCategoryId,
@@ -105,25 +104,7 @@ namespace Finsight.Services
         public async Task<FSTransaction> AddTransactionWithFXAsync(CreateTransactionCommand command, string userId)
         {
             using var _context = await _dbFactory.CreateDbContextAsync();
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
-            DateOnly transactionDate = command.Date ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            FSCurrency defaultCurrency = new() { Code = user?.DefaultCurrency ?? "USD" };
-            var targetCurrencyCodes = await _context.FSBudgets
-                                    .Where(b => b.FSUserId == userId &&
-                                    b.StartDate <= transactionDate &&
-                                    b.FSCurrencyCode != command.Currency &&
-                                    b.BudgetCategories.Any(bc => bc.CategoryId == command.CategoryId))
-                                    .Select(b => b.FSCurrencyCode)
-                                    .Distinct()
-                                    .ToListAsync();
-            if (command.Currency != defaultCurrency.Code && !targetCurrencyCodes.Any(c => c == defaultCurrency.Code))
-            {
-                targetCurrencyCodes.Add(defaultCurrency.Code);
-            }
-            if (targetCurrencyCodes.Count != 0)
-            {
-                await exchangeRateService.SaveExchangeRatesAsync(command.Currency, targetCurrencyCodes, transactionDate);
-            }
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId) ?? throw new Exception("User not found");
             return await AddTransactionAsync(command, userId);
         }
 
@@ -158,7 +139,7 @@ namespace Finsight.Services
                 Type = command.Type,
                 SubType = command.SubType,
                 Mode = command.Mode,
-                Date = command.Date ?? DateOnly.FromDateTime(DateTime.UtcNow),
+                Date = command.Date,
                 UpdatedAt = DateTime.UtcNow,
                 Files = fsFiles
             };

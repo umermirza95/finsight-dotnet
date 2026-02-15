@@ -109,6 +109,7 @@ public class AppDbContext : IdentityDbContext<FSUser>
 
         modelBuilder.Entity<FSUser>(entity =>
         {
+            entity.Property(b => b.DefaultCurrency).HasDefaultValue("USD");
             entity.HasIndex(u => u.Email).IsUnique();
             entity
               .HasOne<FSCurrency>()

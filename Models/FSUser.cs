@@ -4,8 +4,13 @@ using Microsoft.AspNetCore.Identity;
 
 namespace Finsight.Models
 {
-    public class FSUser: IdentityUser
+    public class FSUser : IdentityUser
     {
-        public string? DefaultCurrency { get; set; }
+        private string? _defaultCurrency;
+        public string? DefaultCurrency
+        {
+            get => _defaultCurrency ?? "USD";
+            set => _defaultCurrency = value;
+        }
     }
 }

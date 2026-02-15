@@ -22,7 +22,13 @@ namespace Finsight.Commands
         [StringLength(250)]
         public string? Comment { get; set; }
 
-        public DateOnly? Date { get; set; }
+        private DateOnly? _date { get; set; }
+
+        public DateOnly Date
+        {
+            get => _date ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            set => _date = value;
+        }
 
         [Required]
         public FSTransactionType Type { get; set; }

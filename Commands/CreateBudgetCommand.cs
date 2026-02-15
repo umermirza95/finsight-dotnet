@@ -20,7 +20,7 @@ namespace Finsight.Commands
         public BudgetFrequency Frequency { get; set; }
 
         [Required]
-        public List<string> CategoryIds { get; set; } = [];
+        public List<Guid> CategoryIds { get; set; } = [];
 
         [Required]
         [Range(0.01, double.MaxValue, ErrorMessage = "Amount must be greater than 0")]
