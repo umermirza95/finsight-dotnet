@@ -35,7 +35,7 @@ namespace Finsight.Services
                                     .ToListAsync();
             if (transactionCommand.Currency != user.DefaultCurrency && !targetCurrencyCodes.Any(c => c == user.DefaultCurrency))
             {
-                targetCurrencyCodes.Add(user.DefaultCurrency);
+                targetCurrencyCodes.Add(user.DefaultCurrency!);
             }
             if (targetCurrencyCodes.Count != 0)
             {

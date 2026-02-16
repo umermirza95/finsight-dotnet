@@ -105,6 +105,7 @@ namespace Finsight.Services
         {
             using var _context = await _dbFactory.CreateDbContextAsync();
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId) ?? throw new Exception("User not found");
+            await exchangeRateService.AddMissingFXRatesForTransactionAsync(command, user);
             return await AddTransactionAsync(command, userId);
         }
 
