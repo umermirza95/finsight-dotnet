@@ -57,11 +57,48 @@ namespace Finsight.Services
             if (!groupedByCurrency.Any())
                 return;
 
-            IEnumerable<Task<FSExchangeRate>>? fetchTasks = [];
+            var fetchTasks = new List<Task<List<FSExchangeRate>>>();
             foreach (var group in groupedByCurrency)
             {
+                string sourceCurrency = group.Key;
+                string targetCurrency = budgetCommand.CurrencyCode;
+                var requiredDates = group.Select(t => t.Date).Distinct().ToList();
+                fetchTasks.Add(GetExchangeRatesInRangeAsync(sourceCurrency, targetCurrency, requiredDates));
 
             }
+            List<FSExchangeRate>[] results = await Task.WhenAll(fetchTasks);
+            
+            var allNewRates = results.SelectMany(r => r).ToList();
+
+            if (allNewRates.Count != 0)
+            {
+                using var saveContext = await _dbFactory.CreateDbContextAsync();
+                saveContext.FSExchangeRates.AddRange(allNewRates);
+                await saveContext.SaveChangesAsync();
+            }
+        }
+
+        private async Task<List<FSExchangeRate>> GetExchangeRatesInRangeAsync(string source, string target, List<DateOnly> dates)
+        {
+            using var _context = await _dbFactory.CreateDbContextAsync();
+            var existingDates = await _context.FSExchangeRates
+           .Where(er => er.From == source &&
+                        er.To == target &&
+                        dates.Contains(er.Date))
+           .Select(er => er.Date)
+           .ToListAsync();
+            if (existingDates.Count < dates.Count)
+            {
+                var apiRates = await _fxApiService.FetchExchangeRateRangeFromAPI(
+                    source,
+                    target,
+                    dates.Min(),
+                    dates.Max()
+                );
+
+                return [.. apiRates.Where(apiRate => !existingDates.Contains(apiRate.Date))];
+            }
+            return [];
         }
 
         private async Task SaveExchangeRatesAsync(string source, List<string> targetCurrencyCodes, DateOnly date)

@@ -12,22 +12,37 @@ namespace Finsight.Services
         private readonly IExchangeRateService _exchangeRateService = exchangeRateService;
         public async Task<FSBudget> CreateBudgetAsync(CreateBudgetCommand command, string userId)
         {
-            using var context = await _dbFactory.CreateDbContextAsync();
-            var transactionsToSync = await context.Transactions
-                .Where(t => t.FSUserId == userId && t.Date >= command.StartDate && t.FSCurrencyCode != command.CurrencyCode)
-                .ToListAsync();
-            
+            using var _context = await _dbFactory.CreateDbContextAsync();
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId) ?? throw new Exception("User not found");
+            await _exchangeRateService.AddMissingFXRatesForBudgetAsync(command, user);
+            var budgetId = Guid.NewGuid();
             FSBudget budget = new()
             {
-                Id = Guid.NewGuid(),
+                Id = budgetId,
                 FSUserId = userId,
                 Name = command.Name,
                 FSCurrencyCode = command.CurrencyCode,
                 StartDate = command.StartDate,
-                Frequency = command.Frequency
+                Frequency = command.Frequency,
+                BudgetCategories = [.. command.CategoryIds.Select(categoryId => new FSBudgetCategory
+                {
+                    BudgetId = budgetId,
+                    CategoryId = categoryId
+                })],
+                Periods =
+                        [
+                            new FSBudgetPeriod
+                            {
+                                Id = Guid.NewGuid(),
+                                BudgetId = budgetId,
+                                Amount = command.Amount,
+                                StartDate = command.StartDate
+                            }
+                        ]
             };
-            context.FSBudgets.Add(budget);
-            await context.SaveChangesAsync();
+
+            _context.FSBudgets.Add(budget);
+            await _context.SaveChangesAsync();
             return budget;
         }
     }
