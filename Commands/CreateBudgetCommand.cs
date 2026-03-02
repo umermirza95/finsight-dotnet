@@ -14,13 +14,13 @@ namespace Finsight.Commands
         public string CurrencyCode { get; set; } = string.Empty;
 
         [Required]
-        public DateOnly StartDate { get; set; }
+        public DateOnly? StartDate { get; set; }
 
         [Required]
-        public BudgetFrequency Frequency { get; set; }
+        public BudgetFrequency? Frequency { get; set; }
 
         [Required]
-        public List<Guid> CategoryIds { get; set; } = [];
+        public List<Guid>? CategoryIds { get; set; }
 
         [Required]
         [Range(0.01, double.MaxValue, ErrorMessage = "Amount must be greater than 0")]

@@ -30,7 +30,8 @@ namespace Finsight.Services
 
         public async Task<List<FSExchangeRate>> FetchExchangeRateRangeFromAPI(string source, string target, DateOnly startDate, DateOnly endDate)
         {
-            var apiUrl = $"{_config["ExchangeRateApi:BaseUrl"]}?source={source}&target={target}&from={startDate.ToString("yyyy-MM-dd")}&to={endDate.ToString("yyyy-MM-dd")}&group=day";
+            var apiEndDate = endDate.AddDays(1);
+            var apiUrl = $"{_config["ExchangeRateApi:BaseUrl"]}?source={source}&target={target}&from={startDate.ToString("yyyy-MM-dd")}&to={apiEndDate.ToString("yyyy-MM-dd")}&group=day";
             var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _config["ExchangeRateApi:ApiKey"]);
             var response = await _httpClient.SendAsync(request);
@@ -44,7 +45,7 @@ namespace Finsight.Services
             foreach (var element in doc.RootElement.EnumerateArray())
             {
                 decimal rate = element.GetProperty("rate").GetDecimal();
-                DateTime time = element.GetProperty("time").GetDateTime();
+                DateTime time = DateTime.Parse(element.GetProperty("time").GetString()!);
                 exchangeRates.Add(new FSExchangeRate
                 {
                     Date = DateOnly.FromDateTime(time),

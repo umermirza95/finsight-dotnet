@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Components;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using Finsight.Interfaces;
@@ -26,6 +25,7 @@ builder.Services.AddScoped<ICategoryService, FSCategoryService>();
 builder.Services.AddScoped<ITransactionService, FSTransactionService>();
 builder.Services.AddScoped<IExchangeRateService, FSExchangeRateService>();
 builder.Services.AddScoped<IFileService, FSLinuxFile>();
+builder.Services.AddScoped<IBudgetService, FSBudgetService>();
 builder.Services.AddScoped<IExchangeRateService, FSExchangeRateService>();
 builder.Services.AddHttpClient<IFXAPIService, WiseFXAPIService>();
 

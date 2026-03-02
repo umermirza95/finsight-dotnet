@@ -50,7 +50,7 @@ namespace Finsight.Services
                                     .Where(t => t.FSUserId == user.Id &&
                                     t.Date >= budgetCommand.StartDate &&
                                     t.FSCurrencyCode != budgetCommand.CurrencyCode &&
-                                    budgetCommand.CategoryIds.Contains(t.FSCategoryId))
+                                    budgetCommand.CategoryIds!.Contains(t.FSCategoryId))
                                     .ToListAsync();
 
             var groupedByCurrency = transactionsToSync.GroupBy(t => t.FSCurrencyCode);
@@ -89,14 +89,17 @@ namespace Finsight.Services
            .ToListAsync();
             if (existingDates.Count < dates.Count)
             {
+                DateOnly minDate = dates.Min();
+                DateOnly maxDate = dates.Max();
                 var apiRates = await _fxApiService.FetchExchangeRateRangeFromAPI(
                     source,
                     target,
-                    dates.Min(),
-                    dates.Max()
+                    minDate,
+                    maxDate
                 );
 
-                return [.. apiRates.Where(apiRate => !existingDates.Contains(apiRate.Date))];
+                var newRates = apiRates.Where(apiRate => dates.Contains(apiRate.Date) && !existingDates.Contains(apiRate.Date)).ToList();
+                return newRates;
             }
             return [];
         }
