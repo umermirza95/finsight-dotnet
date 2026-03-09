@@ -160,7 +160,7 @@ namespace Finsight.Services
                             er.To == budgetCurrency &&
                             er.Date == t.Date)?.ExchangeRate;
 
-                        return t.Amount * (rate ?? throw new InvalidOperationException("Exchange rate not found for transaction")); // Use 0 or 1 depending on your fallback preference
+                        return t.Amount * (rate ?? throw new InvalidOperationException("Exchange rate not found for transaction " + t.Id)); 
                     });
 
                 return new FSBudgetDTO

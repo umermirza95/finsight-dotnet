@@ -14,6 +14,8 @@ public class AppDbContext : IdentityDbContext<FSUser>
     public DbSet<FSBudget> FSBudgets { get; set; }
     public DbSet<FSBudgetPeriod> FSBudgetPeriods { get; set; }
     public DbSet<FSBudgetCategory> FSBudgetCategories { get; set; }
+
+    public DbSet<FSTransactionEmail> FSTransactionEmails { get; set; }
     public DbSet<FSFile> FSFiles { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -31,6 +33,14 @@ public class AppDbContext : IdentityDbContext<FSUser>
             .WithMany()
             .HasForeignKey(t => t.FSUserId)
             .OnDelete(DeleteBehavior.Restrict);
+        
+        modelBuilder.Entity<FSTransactionEmail>(entity=>
+        {
+            entity.HasOne<FSUser>()
+                .WithMany()       
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
         
 
         modelBuilder.Entity<FSBudget>(entity=>
