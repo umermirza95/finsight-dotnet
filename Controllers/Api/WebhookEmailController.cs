@@ -75,7 +75,7 @@ namespace Finsight.Controller
             _context.FSTransactionEmails.Add(emailRecord);
             await _context.SaveChangesAsync();
 
-            _ = Task.Run(async () => _llmService.CreateTransactionSuggestionAsync(payload, externalAlias));
+            //_ = Task.Run(async () => _llmService.CreateTransactionSuggestionAsync(payload, externalAlias));
 
             return Ok();
         }

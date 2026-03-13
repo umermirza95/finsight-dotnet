@@ -56,19 +56,18 @@ namespace Finsight.Services
 
                         Email Body: {email.Html}
                         Current Date: {DateTime.Now:yyyy-MM-dd}";
-            
+
             _logger.LogInformation("Prompt for Gemini: {Prompt}", prompt);
 
-            // 3. Call Gemini Flash
-            var response = await _model.GenerateContent(prompt, new GenerationConfig
-            {
-                ResponseMimeType = "application/json"
-            });
-           
-            _logger.LogInformation("Raw response from Gemini: {GeminiResponse}", response.Text);
             try
             {
-                if(string.IsNullOrEmpty(response.Text))
+                var response = await _model.GenerateContent(prompt, new GenerationConfig
+                {
+                    ResponseMimeType = "application/json"
+                });
+
+                _logger.LogInformation("Raw response from Gemini: {GeminiResponse}", response.Text);
+                if (string.IsNullOrEmpty(response.Text))
                 {
                     _logger.LogWarning("Received empty response from Gemini for user {UserId}", userId);
                     return null;
@@ -99,9 +98,9 @@ namespace Finsight.Services
 
                 return suggestion;
             }
-            catch (JsonException)
+            catch (JsonException ex)
             {
-                _logger.LogError("Failed to parse Gemini response as JSON. Response: {GeminiResponse}", response.Text);
+                _logger.LogError("Failed to parse Gemini {response}", ex.Message);
                 return null;
             }
         }
