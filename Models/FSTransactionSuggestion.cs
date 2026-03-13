@@ -34,5 +34,7 @@ namespace Finsight.Models
         public string? Comment { get; set; }
 
         public FSTransactionSubType? SubType { get; set; }
+
+        public string TransactionExternalId { get; set; } = string.Empty;
     }
 }

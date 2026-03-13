@@ -7,6 +7,10 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Components.Authorization;
+using Mscc.GenerativeAI;
+using Mscc.GenerativeAI.Types;
+using OpenTelemetry.Logs;
+using OpenTelemetry.Resources;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -28,6 +32,31 @@ builder.Services.AddScoped<IFileService, FSLinuxFile>();
 builder.Services.AddScoped<IBudgetService, FSBudgetService>();
 builder.Services.AddScoped<IExchangeRateService, FSExchangeRateService>();
 builder.Services.AddHttpClient<IFXAPIService, WiseFXAPIService>();
+
+builder.Logging.AddOpenTelemetry(logging =>
+{
+    logging.IncludeFormattedMessage = true;
+    logging.IncludeScopes = true;
+    logging.SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("Finsight"));
+    logging.AddOtlpExporter(options => 
+    {
+        options.Endpoint = new Uri("http://localhost:3100/otlp/v1/logs");
+        options.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
+    });
+});
+
+builder.Services.AddSingleton(sp => 
+{
+    var apiKey = builder.Configuration["Gemini:ApiKey"] 
+        ?? throw new InvalidOperationException("Gemini:ApiKey is missing in appsettings.json");
+    return new GoogleAI(apiKey);
+});
+builder.Services.AddScoped(sp => 
+{
+    var googleAi = sp.GetRequiredService<GoogleAI>();
+    return googleAi.GenerativeModel(Model.Gemini25Flash); 
+});
+builder.Services.AddScoped<ILLMService, FSGeminiService>();
 
 
 

@@ -14,9 +14,9 @@ public class AppDbContext : IdentityDbContext<FSUser>
     public DbSet<FSBudget> FSBudgets { get; set; }
     public DbSet<FSBudgetPeriod> FSBudgetPeriods { get; set; }
     public DbSet<FSBudgetCategory> FSBudgetCategories { get; set; }
-
     public DbSet<FSTransactionEmail> FSTransactionEmails { get; set; }
     public DbSet<FSFile> FSFiles { get; set; }
+    public DbSet<FSTransactionSuggestion> FSTransactionSuggestions { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
