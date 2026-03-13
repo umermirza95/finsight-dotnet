@@ -5,6 +5,6 @@ namespace Finsight.Interfaces
 {
     public interface ILLMService
     {
-        Task<FSTransactionSuggestion?> CreateTransactionSuggestionAsync(WebhookEmailCommand email, string userId);
+        Task<FSTransactionSuggestion?> CreateTransactionSuggestionAsync(string email, string userId);
     }
 }

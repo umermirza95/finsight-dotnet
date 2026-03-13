@@ -21,9 +21,9 @@ namespace Finsight.Services
         private readonly GenerativeModel _model = model;
         private readonly ILogger<FSGeminiService> _logger = logger;
 
-        public async Task<FSTransactionSuggestion?> CreateTransactionSuggestionAsync(WebhookEmailCommand email, string userId)
+        public async Task<FSTransactionSuggestion?> CreateTransactionSuggestionAsync(string email, string userId)
         {
-            _logger.LogInformation("Creating transaction suggestion for user {UserId} based on email with subject: {EmailSubject}", userId, email.Subject);
+            _logger.LogInformation("Creating transaction suggestion for user {UserId}", userId);
             var categories = await _categoryService.GetCategoriesAsync(userId);
             var categoryContext = categories.Select(c => new
             {
@@ -54,7 +54,7 @@ namespace Finsight.Services
                         - Nulls: Use null for any field you cannot confidently determine.
                         - Format: Return raw JSON only. No markdown formatting.
 
-                        Email Body: {email.Html}
+                        Email Body: {email}
                         Current Date: {DateTime.Now:yyyy-MM-dd}";
 
             _logger.LogInformation("Prompt for Gemini: {Prompt}", prompt);

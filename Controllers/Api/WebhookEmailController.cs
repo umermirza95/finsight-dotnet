@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Finsight.Commands;
 using Finsight.Models;
 using Finsight.Interfaces;
+using Finsight.Utils;
 
 namespace Finsight.Controller
 {
@@ -14,40 +15,12 @@ namespace Finsight.Controller
         private readonly ILLMService _llmService = llmService;
         private readonly ILogger<WebhookEmailController> _logger = logger;
 
-        [HttpPost("test")]
-        public async Task<IActionResult> TestEndpoint([FromBody] WebhookEmailCommand payload)
-        {
-            try
-            {
-                await _llmService.CreateTransactionSuggestionAsync(payload, "06fa3f2a-523e-42d9-a039-8eda7b0ea9fb");
-                return Ok();
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-
-        }
+       
 
         [HttpPost]
-        public async Task<IActionResult> ReceiveEmail()
+        public async Task<IActionResult> ReceiveEmail([FromBody] WebhookEmailCommand payload)
         {
-            Request.EnableBuffering();
-            using var reader = new StreamReader(Request.Body, leaveOpen: true);
-            var rawJson = await reader.ReadToEndAsync();
-            var payloadPath = "/tmp/last_webhook_payload.json";
-            await System.IO.File.WriteAllTextAsync(payloadPath, rawJson);
-            var payload = System.Text.Json.JsonSerializer.Deserialize<WebhookEmailCommand>(rawJson, new System.Text.Json.JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-
-            if (payload == null)
-            {
-                _logger.LogError("Failed to deserialize webhook payload. Raw JSON: {RawJson}", rawJson);
-                return Ok();
-            }
-
+            
             await using var _context = await _dbFactory.CreateDbContextAsync();
 
             var recipient = payload.Recipients.FirstOrDefault();
@@ -68,7 +41,7 @@ namespace Finsight.Controller
                 UserId = externalAlias,
                 Subject = payload.Subject ?? string.Empty,
                 Text = payload.Text ?? string.Empty,
-                Html = payload.Html ?? string.Empty,
+                Html = EmailCleaner.CleanEmailHtml(payload.Html ?? string.Empty),
                 From = payload.From?.Value?.Select(v => v.Address).ToList() ?? [],
                 To = payload.Recipients ?? []
             };
@@ -76,7 +49,7 @@ namespace Finsight.Controller
             _context.FSTransactionEmails.Add(emailRecord);
             await _context.SaveChangesAsync();
 
-            //_ = Task.Run(async () => _llmService.CreateTransactionSuggestionAsync(payload, externalAlias));
+            _ = Task.Run(async () => _llmService.CreateTransactionSuggestionAsync(emailRecord.Html, externalAlias));
 
             return Ok();
         }
