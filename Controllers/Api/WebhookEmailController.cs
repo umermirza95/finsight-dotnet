@@ -8,10 +8,11 @@ namespace Finsight.Controller
 {
     [ApiController]
     [Route("api/webhooks/bank-email")]
-    public class WebhookEmailController(IDbContextFactory<AppDbContext> dbFactory, ILLMService llmService) : ControllerBase
+    public class WebhookEmailController(IDbContextFactory<AppDbContext> dbFactory, ILLMService llmService, ILogger<WebhookEmailController> logger) : ControllerBase
     {
         private readonly IDbContextFactory<AppDbContext> _dbFactory = dbFactory;
         private readonly ILLMService _llmService = llmService;
+        private readonly ILogger<WebhookEmailController> _logger = logger;
 
         [HttpPost("test")]
         public async Task<IActionResult> TestEndpoint([FromBody] WebhookEmailCommand payload)
@@ -24,13 +25,19 @@ namespace Finsight.Controller
             catch (Exception ex)
             {
                 return BadRequest(new { message = ex.Message });
-            }   
-            
+            }
+
         }
 
         [HttpPost]
         public async Task<IActionResult> ReceiveEmail([FromBody] WebhookEmailCommand payload)
         {
+            Request.EnableBuffering();
+            using var reader = new StreamReader(Request.Body, leaveOpen: true);
+            var rawJson = await reader.ReadToEndAsync();
+            Request.Body.Position = 0;
+            _logger.LogInformation("Transaction Email Webhook JSON: {RawJson}", rawJson);
+
             await using var _context = await _dbFactory.CreateDbContextAsync();
 
             var recipient = payload.Recipients.FirstOrDefault();
@@ -38,14 +45,14 @@ namespace Finsight.Controller
 
             if (string.IsNullOrEmpty(externalAlias))
             {
-                return Ok(); 
+                return Ok();
             }
 
-           
+
             var userExists = await _context.Users.AnyAsync(u => u.Id == externalAlias);
             if (!userExists) return Ok();
 
-           
+
             var emailRecord = new FSTransactionEmail
             {
                 UserId = externalAlias,
@@ -59,7 +66,7 @@ namespace Finsight.Controller
             _context.FSTransactionEmails.Add(emailRecord);
             await _context.SaveChangesAsync();
 
-            _ = Task.Run(async () =>  _llmService.CreateTransactionSuggestionAsync(payload, externalAlias));
+            _ = Task.Run(async () => _llmService.CreateTransactionSuggestionAsync(payload, externalAlias));
 
             return Ok();
         }

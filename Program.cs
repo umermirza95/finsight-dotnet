@@ -89,6 +89,8 @@ builder.Services.AddControllers()
 .AddJsonOptions(option => { option.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()); });
 
 var app = builder.Build();
+var logger = app.Services.GetRequiredService<ILogger<Program>>();
+logger.LogInformation("Finsight App Started on VPS. Logs are being shipped to Loki.");
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
