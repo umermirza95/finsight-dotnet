@@ -35,7 +35,8 @@ namespace Finsight.Controller
             Request.EnableBuffering();
             using var reader = new StreamReader(Request.Body, leaveOpen: true);
             var rawJson = await reader.ReadToEndAsync();
-            _logger.LogInformation("Transaction Email Webhook JSON: {RawJson}", rawJson);
+            var payloadPath = Path.Combine(Directory.GetCurrentDirectory(), "last_webhook_payload.json");
+            await System.IO.File.WriteAllTextAsync(payloadPath, rawJson);
             var payload = System.Text.Json.JsonSerializer.Deserialize<WebhookEmailCommand>(rawJson, new System.Text.Json.JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true
