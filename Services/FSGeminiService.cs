@@ -13,15 +13,17 @@ namespace Finsight.Services
     public class FSGeminiService(
         IDbContextFactory<AppDbContext> dbFactory,
         ICategoryService categoryService,
-        GenerativeModel model) : ILLMService
+        GenerativeModel model,
+        ILogger<FSGeminiService> logger) : ILLMService
     {
         private readonly IDbContextFactory<AppDbContext> _dbFactory = dbFactory;
         private readonly ICategoryService _categoryService = categoryService;
         private readonly GenerativeModel _model = model;
+        private readonly ILogger<FSGeminiService> _logger = logger;
 
         public async Task<FSTransactionSuggestion?> CreateTransactionSuggestionAsync(WebhookEmailCommand email, string userId)
         {
-
+            _logger.LogInformation("Creating transaction suggestion for user {UserId} based on email with subject: {EmailSubject}", userId, email.Subject);
             var categories = await _categoryService.GetCategoriesAsync(userId);
             var categoryContext = categories.Select(c => new
             {
@@ -29,7 +31,6 @@ namespace Finsight.Services
                 c.Name,
                 Subs = c.SubCategories.Select(s => new { s.Id, s.Name })
             });
-
             var schemaTemplate = @"{
                                     ""Amount"": decimal,
                                     ""FSCategoryId"": ""Guid or null"",
@@ -55,6 +56,8 @@ namespace Finsight.Services
 
                         Email Body: {email.Html}
                         Current Date: {DateTime.Now:yyyy-MM-dd}";
+            
+            _logger.LogInformation("Prompt for Gemini: {Prompt}", prompt);
 
             // 3. Call Gemini Flash
             var response = await _model.GenerateContent(prompt, new GenerationConfig
@@ -62,11 +65,12 @@ namespace Finsight.Services
                 ResponseMimeType = "application/json"
             });
            
-
+            _logger.LogInformation("Raw response from Gemini: {GeminiResponse}", response.Text);
             try
             {
                 if(string.IsNullOrEmpty(response.Text))
                 {
+                    _logger.LogWarning("Received empty response from Gemini for user {UserId}", userId);
                     return null;
                 }
                 var cleanJson = response.Text.Replace("```json", "").Replace("```", "").Trim();
@@ -97,7 +101,7 @@ namespace Finsight.Services
             }
             catch (JsonException)
             {
-                // Logic for malformed LLM response
+                _logger.LogError("Failed to parse Gemini response as JSON. Response: {GeminiResponse}", response.Text);
                 return null;
             }
         }

@@ -30,13 +30,22 @@ namespace Finsight.Controller
         }
 
         [HttpPost]
-        public async Task<IActionResult> ReceiveEmail([FromBody] WebhookEmailCommand payload)
+        public async Task<IActionResult> ReceiveEmail()
         {
             Request.EnableBuffering();
             using var reader = new StreamReader(Request.Body, leaveOpen: true);
             var rawJson = await reader.ReadToEndAsync();
-            Request.Body.Position = 0;
             _logger.LogInformation("Transaction Email Webhook JSON: {RawJson}", rawJson);
+            var payload = System.Text.Json.JsonSerializer.Deserialize<WebhookEmailCommand>(rawJson, new System.Text.Json.JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (payload == null)
+            {
+                _logger.LogError("Failed to deserialize webhook payload. Raw JSON: {RawJson}", rawJson);
+                return Ok();
+            }
 
             await using var _context = await _dbFactory.CreateDbContextAsync();
 
