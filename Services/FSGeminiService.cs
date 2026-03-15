@@ -95,7 +95,7 @@ namespace Finsight.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError("Failed to parse Gemini {response}", ex.Message);
+                _logger.LogError("Failed to parse Gemini {response}", ex.InnerException != null ? ex.InnerException.Message : ex.Message);
                 return null;
             }
         }
