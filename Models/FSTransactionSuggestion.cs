@@ -7,10 +7,10 @@ namespace Finsight.Models
     public class FSTransactionSuggestion
     {
         [Key]
-        public required Guid Id { get; set; }
+        public  Guid Id { get; set; }
 
         [ForeignKey(nameof(FSUser))]
-        public required string FSUserId { get; set; }
+        public  string FSUserId { get; set; } = string.Empty;
 
         [Column(TypeName = "decimal(18,2)")]
         public required decimal Amount { get; set; }
@@ -22,7 +22,7 @@ namespace Finsight.Models
 
         public required DateOnly Date { get; set; }
 
-        public required DateTime UpdatedAt { get; set; }
+        public  DateTime UpdatedAt { get; set; }
 
         public required string FSCurrencyCode { get; set; }
 

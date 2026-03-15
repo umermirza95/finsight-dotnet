@@ -21,10 +21,10 @@ namespace Finsight.Services
         private readonly GenerativeModel _model = model;
         private readonly ILogger<FSGeminiService> _logger = logger;
 
-        public async Task<FSTransactionSuggestion?> CreateTransactionSuggestionAsync(string email, string userId)
+        public async Task<FSTransactionSuggestion?> CreateTransactionSuggestionAsync(FSTransactionEmail email)
         {
-            _logger.LogInformation("Creating transaction suggestion for user {UserId}", userId);
-            var categories = await _categoryService.GetCategoriesAsync(userId);
+            _logger.LogInformation("Creating transaction suggestion from email {emailId}", email.Id);
+            var categories = await _categoryService.GetCategoriesAsync(email.UserId);
             var categoryContext = categories.Select(c => new
             {
                 c.Id,
@@ -54,10 +54,8 @@ namespace Finsight.Services
                         - Nulls: Use null for any field you cannot confidently determine.
                         - Format: Return raw JSON only. No markdown formatting.
 
-                        Email Body: {email}
+                        Email Body: {email.Html}
                         Current Date: {DateTime.Now:yyyy-MM-dd}";
-
-            _logger.LogInformation("Prompt for Gemini: {Prompt}", prompt);
 
             try
             {
@@ -66,30 +64,27 @@ namespace Finsight.Services
                     ResponseMimeType = "application/json"
                 });
 
-                _logger.LogInformation("Raw response from Gemini: {GeminiResponse}", response.Text);
-                if (string.IsNullOrEmpty(response.Text))
-                {
-                    _logger.LogWarning("Received empty response from Gemini for user {UserId}", userId);
-                    return null;
-                }
-                var cleanJson = response.Text.Replace("```json", "").Replace("```", "").Trim();
+                _logger.LogInformation("Raw response from Gemini: {GeminiResponse} for email {emailId}", response.Text, email.Id);
+               
+                var cleanJson = response.Text?.Replace("```json", "").Replace("```", "").Trim();
                 var options = new JsonSerializerOptions
                 {
                     PropertyNameCaseInsensitive = true,
                     Converters = { new JsonStringEnumConverter() }
                 };
 
-                var suggestion = JsonSerializer.Deserialize<FSTransactionSuggestion>(cleanJson, options);
+                var suggestion = JsonSerializer.Deserialize<FSTransactionSuggestion>(cleanJson ?? "", options);
 
                 if (suggestion == null) return null;
 
                 if (suggestion.Type != FSTransactionType.expense)
                 {
+                    _logger.LogInformation("Gemini response for email {emailId} is not an expense transaction. Ignoring.", email.Id);
                     return null;
                 }
 
                 suggestion.Id = Guid.NewGuid();
-                suggestion.FSUserId = userId;
+                suggestion.FSUserId = email.UserId;
                 suggestion.UpdatedAt = DateTime.UtcNow;
 
                 using var context = await _dbFactory.CreateDbContextAsync();
@@ -98,7 +93,7 @@ namespace Finsight.Services
 
                 return suggestion;
             }
-            catch (JsonException ex)
+            catch (Exception ex)
             {
                 _logger.LogError("Failed to parse Gemini {response}", ex.Message);
                 return null;
