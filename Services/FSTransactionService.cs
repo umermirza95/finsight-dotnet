@@ -105,14 +105,6 @@ namespace Finsight.Services
         {
             using var _context = await _dbFactory.CreateDbContextAsync();
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId) ?? throw new Exception("User not found");
-            await exchangeRateService.AddMissingFXRatesForTransactionAsync(command, user);
-            return await AddTransactionAsync(command, userId);
-        }
-
-
-        public async Task<FSTransaction> AddTransactionAsync(CreateTransactionCommand command, string userId)
-        {
-            using var _context = await _dbFactory.CreateDbContextAsync();
             var transactionId = Guid.NewGuid();
             var fsFiles = new List<FSFile>();
             foreach (var file in command.Attachments)
@@ -144,7 +136,31 @@ namespace Finsight.Services
                 UpdatedAt = DateTime.UtcNow,
                 Files = fsFiles
             };
+            await exchangeRateService.AddMissingFXRatesForTransactionAsync(transaction, user);
             _context.Transactions.Add(transaction);
+            await _context.SaveChangesAsync();
+            return transaction;
+        }
+
+        public async Task<FSTransaction> EditTransactionAsync(Guid id, EditTransactionCommand command, string userId)
+        {
+            using var _context = await _dbFactory.CreateDbContextAsync();
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId) ?? throw new Exception("User not found");
+            var transaction = await _context.Transactions.FirstOrDefaultAsync(t => t.Id == id && t.FSUserId == userId)
+            ?? throw new Exception($"Transaction with id `{id}` not found for the user `{userId}`.");
+
+            // Update properties
+            transaction.Amount = command.Amount;
+            transaction.FSCategoryId = command.CategoryId ?? throw new ArgumentNullException("CategoryId is required");
+            transaction.FSSubCategoryId = command.SubCategoryId;
+            transaction.FSCurrencyCode = command.Currency!;
+            transaction.Comment = command.Comment;
+            transaction.Type = command.Type;
+            transaction.SubType = command.SubType;
+            transaction.Mode = command.Mode;
+            transaction.Date = command.Date;
+            transaction.UpdatedAt = DateTime.UtcNow;
+            await exchangeRateService.AddMissingFXRatesForTransactionAsync(transaction, user);
             await _context.SaveChangesAsync();
             return transaction;
         }

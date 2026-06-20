@@ -42,6 +42,27 @@ namespace Finsight.Controller
         }
 
 
+        [HttpPut("{id:guid}")]
+        public async Task<IActionResult> EditTransactionAsync(Guid id, [FromBody] EditTransactionCommand command)
+        {
+            var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            try
+            {
+                var transaction = await _transactionService.EditTransactionAsync(id, command, userIdString);
+                return Ok(new
+                {
+                    data = transaction
+                });
+            }
+            catch (Exception e)
+            {
+                return BadRequest(new
+                {
+                    error = e.Message
+                });
+            }
+        }
+
         [HttpDelete("{id:guid}")]
         public async Task<IActionResult> DeleteTransactionAsync(Guid id)
         {

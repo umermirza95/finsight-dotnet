@@ -6,7 +6,7 @@ namespace Finsight.Services
 {
     public interface IExchangeRateService
     {
-        Task AddMissingFXRatesForTransactionAsync(CreateTransactionCommand transactionCommand, FSUser user);
+        Task AddMissingFXRatesForTransactionAsync(FSTransaction transaction, FSUser user);
         Task AddMissingFXRatesForBudgetAsync(CreateBudgetCommand budgetCommand, FSUser user);
         List<FSCurrency> SupportedCurrencies { get; }
     }

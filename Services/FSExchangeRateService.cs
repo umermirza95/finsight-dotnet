@@ -1,6 +1,7 @@
 
 using System.Net.Http.Headers;
 using System.Text.Json;
+using System.Transactions;
 using Finsight.Commands;
 using Finsight.Interfaces;
 using Finsight.Models;
@@ -22,24 +23,24 @@ namespace Finsight.Services
             }
         }
 
-        public async Task AddMissingFXRatesForTransactionAsync(CreateTransactionCommand transactionCommand, FSUser user)
+        public async Task AddMissingFXRatesForTransactionAsync(FSTransaction transaction, FSUser user)
         {
             using var _context = await _dbFactory.CreateDbContextAsync();
             var targetCurrencyCodes = await _context.FSBudgets
                                     .Where(b => b.FSUserId == user.Id &&
-                                    b.StartDate <= transactionCommand.Date &&
-                                    b.FSCurrencyCode != transactionCommand.Currency &&
-                                    b.BudgetCategories.Any(bc => bc.CategoryId == transactionCommand.CategoryId))
+                                    b.StartDate <= transaction.Date &&
+                                    b.FSCurrencyCode != transaction.FSCurrencyCode   &&
+                                    b.BudgetCategories.Any(bc => bc.CategoryId == transaction.FSCategoryId))
                                     .Select(b => b.FSCurrencyCode)
                                     .Distinct()
                                     .ToListAsync();
-            if (transactionCommand.Currency != user.DefaultCurrency && !targetCurrencyCodes.Any(c => c == user.DefaultCurrency))
+            if (transaction.FSCurrencyCode != user.DefaultCurrency && !targetCurrencyCodes.Any(c => c == user.DefaultCurrency))
             {
                 targetCurrencyCodes.Add(user.DefaultCurrency!);
             }
             if (targetCurrencyCodes.Count != 0)
             {
-                await SaveExchangeRatesAsync(transactionCommand.Currency, targetCurrencyCodes, transactionCommand.Date);
+                await SaveExchangeRatesAsync(transaction.FSCurrencyCode, targetCurrencyCodes, transaction.Date);
             }
         }
 
