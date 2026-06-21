@@ -42,8 +42,7 @@ namespace Finsight.Services
 
             if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(queryId))
             {
-                _logger.LogWarning($"IBKR Token or QueryId is not configured for user {userId}.");
-                return;
+                throw new Exception($"IBKR Token or QueryId is not configured for the user {userId}");
             }
 
             var requestUrl = $"https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/SendRequest?t={token}&q={queryId}&v=3";
@@ -58,20 +57,18 @@ namespace Finsight.Services
             if (status != "Success")
             {
                 var error = doc.Descendants("ErrorMessage").FirstOrDefault()?.Value;
-                _logger.LogError($"IBKR Flex request failed: {error}");
-                return;
+                throw new Exception($"IBKR Flex request failed: {error}");
             }
 
             var referenceCode = doc.Descendants("ReferenceCode").FirstOrDefault()?.Value;
             if (string.IsNullOrEmpty(referenceCode))
             {
-                _logger.LogError("Reference code not found in IBKR response.");
-                return;
+                throw new Exception("Reference code not found in IBKR response.");
             }
 
             string? csvData = null;
             var statementUrl = $"https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement?q={referenceCode}&t={token}&v=3";
-            
+            _logger.LogInformation("Polling for statement at {Url}", statementUrl);
             for (int i = 0; i < 12; i++)
             {
                 await Task.Delay(5000); // wait 5 seconds
@@ -99,8 +96,7 @@ namespace Finsight.Services
 
             if (string.IsNullOrEmpty(csvData) || csvData.StartsWith("<"))
             {
-                _logger.LogError("Failed to retrieve CSV data from IBKR after polling.");
-                return;
+                throw new Exception("Failed to retrieve CSV data from IBKR after polling.");
             }
 
             await ProcessCsvDataAsync(csvData, userId);
@@ -109,6 +105,7 @@ namespace Finsight.Services
         private async Task ProcessCsvDataAsync(string csvData, string userId)
         {
             var lines = csvData.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            _logger.LogInformation("Processing {LineCount} lines of CSV data from IBKR.", lines.Length);
             var records = new List<IBKRTradeRecord>();
 
             foreach (var line in lines)
@@ -189,7 +186,7 @@ namespace Finsight.Services
 
         private class IBKRTradeRecord
         {
-            public string? Symbol { get; set; }
+            public string Symbol { get; set; } = string.Empty;
             public decimal TradePrice { get; set; }
             public decimal Quantity { get; set; }
             public decimal IBCommission { get; set; }
