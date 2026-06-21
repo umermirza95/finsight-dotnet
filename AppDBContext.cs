@@ -17,6 +17,8 @@ public class AppDbContext : IdentityDbContext<FSUser>
     public DbSet<FSTransactionEmail> FSTransactionEmails { get; set; }
     public DbSet<FSFile> FSFiles { get; set; }
     public DbSet<FSTransactionSuggestion> FSTransactionSuggestions { get; set; }
+    public DbSet<FSTrade> FSTrades { get; set; }
+    public DbSet<FSClosedTrade> FSClosedTrades { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -190,5 +192,26 @@ public class AppDbContext : IdentityDbContext<FSUser>
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
+        modelBuilder.Entity<FSTrade>(entity =>
+        {
+            entity.Property(t => t.TradeDirection).HasConversion<string>();
+            entity.HasAlternateKey(t => t.ExternalId);
+            entity.HasOne<FSUser>().WithMany().HasForeignKey(t => t.FSUserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<FSClosedTrade>(entity =>
+        {
+            entity.HasOne(ct => ct.OpenTrade)
+                  .WithMany()
+                  .HasPrincipalKey(t => t.ExternalId)
+                  .HasForeignKey(ct => ct.OrderOpenId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(ct => ct.CloseTrade)
+                  .WithMany()
+                  .HasPrincipalKey(t => t.ExternalId)
+                  .HasForeignKey(ct => ct.OrderCloseId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
     }
 }

@@ -27,4 +27,10 @@ namespace Finsight.Enums
         Monthly,
         Yearly
     }
+
+    public enum TradeDirection
+    {
+        BUY,
+        SELL
+    }
 }
