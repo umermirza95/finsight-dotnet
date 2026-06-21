@@ -32,9 +32,6 @@ namespace Finsight.Controller
             }
             catch (Exception ex)
             {
-                Console.WriteLine(ex);
-                Console.WriteLine(ex.InnerException);
-                Console.WriteLine(ex.InnerException?.InnerException);
                 return StatusCode(500, new { error = ex.Message });
             }
         }

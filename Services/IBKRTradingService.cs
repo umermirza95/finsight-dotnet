@@ -53,7 +53,7 @@ namespace Finsight.Services
             var xmlContent = await response.Content.ReadAsStringAsync();
             var doc = XDocument.Parse(xmlContent);
             var status = doc.Descendants("Status").FirstOrDefault()?.Value;
-            
+
             if (status != "Success")
             {
                 var error = doc.Descendants("ErrorMessage").FirstOrDefault()?.Value;
@@ -73,23 +73,23 @@ namespace Finsight.Services
             {
                 await Task.Delay(5000); // wait 5 seconds
                 var statementResponse = await _httpClient.GetAsync(statementUrl);
-                
+
                 if (statementResponse.IsSuccessStatusCode)
                 {
                     csvData = await statementResponse.Content.ReadAsStringAsync();
-                    
+
                     // If it returns XML with an error about report not ready, it's not CSV yet.
                     if (csvData.StartsWith("<"))
                     {
                         var tryDoc = XDocument.Parse(csvData);
                         var tryStatus = tryDoc.Descendants("Status").FirstOrDefault()?.Value;
-                        if (tryStatus == "Warn") 
+                        if (tryStatus == "Warn")
                         {
                             // "Statement generation in progress"
                             continue;
                         }
                     }
-                    
+
                     break;
                 }
             }
@@ -137,39 +137,44 @@ namespace Finsight.Services
 
             var grouped = records.GroupBy(r => r.IBOrderID).ToList();
             var orderIds = grouped.Select(g => g.Key).ToList();
+            _logger.LogInformation("Found {GroupCount} unique trades based on IBOrderID.", grouped.Count);
 
             var existingIds = await _dbContext.FSTrades
                 .Where(t => orderIds.Contains(t.ExternalId))
                 .Select(t => t.ExternalId)
                 .ToListAsync();
 
+            _logger.LogInformation("{ExistingCount} trades already exist in the database and will be skipped.", existingIds.Count);
+
             var newTrades = new List<FSTrade>();
 
             foreach (var group in grouped)
             {
-                if (existingIds.Contains(group.Key)) continue;
-
-                var first = group.First();
-                var direction = first.BuySell == "BUY" ? TradeDirection.BUY : TradeDirection.SELL;
-                
-                var totalQty = group.Sum(x => Math.Abs(x.Quantity));
-                var totalComm = group.Sum(x => Math.Abs(x.IBCommission));
-                var vwap = totalQty > 0 ? group.Sum(x => x.TradePrice * Math.Abs(x.Quantity)) / totalQty : first.TradePrice;
-
-                DateOnly.TryParseExact(first.TradeDate, "yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsedDate);
-
-                newTrades.Add(new FSTrade
+                _logger.LogInformation("Processing trade group with IBOrderID: {OrderId}, containing {RecordCount} records.", group.Key, group.Count());
+                if (!existingIds.Contains(group.Key))
                 {
-                    Id = Guid.NewGuid(),
-                    FSUserId = userId,
-                    Ticker = first.Symbol,
-                    TradePrice = vwap,
-                    TradeDirection = direction,
-                    Quantity = totalQty,
-                    Commission = totalComm,
-                    Date = parsedDate,
-                    ExternalId = group.Key
-                });
+                    var first = group.First();
+                    var direction = first.BuySell == "BUY" ? TradeDirection.BUY : TradeDirection.SELL;
+
+                    var totalQty = group.Sum(x => Math.Abs(x.Quantity));
+                    var totalComm = group.Sum(x => Math.Abs(x.IBCommission));
+                    var vwap = totalQty > 0 ? group.Sum(x => x.TradePrice * Math.Abs(x.Quantity)) / totalQty : first.TradePrice;
+
+                    DateOnly.TryParseExact(first.TradeDate, "yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsedDate);
+
+                    newTrades.Add(new FSTrade
+                    {
+                        Id = Guid.NewGuid(),
+                        FSUserId = userId,
+                        Ticker = first.Symbol,
+                        TradePrice = vwap,
+                        TradeDirection = direction,
+                        Quantity = totalQty,
+                        Commission = totalComm,
+                        Date = parsedDate,
+                        ExternalId = group.Key
+                    });
+                }
             }
 
             if (newTrades.Any())
