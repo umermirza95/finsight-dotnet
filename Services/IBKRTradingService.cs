@@ -46,7 +46,7 @@ namespace Finsight.Services
                 return;
             }
 
-            var requestUrl = $"https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService.SendRequest?t={token}&q={queryId}&v=3";
+            var requestUrl = $"https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/SendRequest?t={token}&q={queryId}&v=3";
             _logger.LogInformation("Requesting {Url}", requestUrl);
             var response = await _httpClient.GetAsync(requestUrl);
             response.EnsureSuccessStatusCode();
@@ -70,7 +70,7 @@ namespace Finsight.Services
             }
 
             string? csvData = null;
-            var statementUrl = $"https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService.GetStatement?q={referenceCode}&t={token}&v=3";
+            var statementUrl = $"https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement?q={referenceCode}&t={token}&v=3";
             
             for (int i = 0; i < 12; i++)
             {
