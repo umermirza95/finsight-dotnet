@@ -9,6 +9,10 @@ namespace Finsight.Models
         [Key]
         public required Guid Id { get; set; }
 
+        public required string FSUserId { get; set; }
+        [ForeignKey(nameof(FSUserId))]
+        public FSUser? User { get; set; }
+
         public required string OrderOpenId { get; set; }
         [ForeignKey(nameof(OrderOpenId))]
         public FSTrade? OpenTrade { get; set; }

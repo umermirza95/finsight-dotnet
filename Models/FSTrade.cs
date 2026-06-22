@@ -2,9 +2,11 @@ using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using Finsight.Enums;
+using Microsoft.EntityFrameworkCore;
 
 namespace Finsight.Models
 {
+    [Index(nameof(ExternalId), IsUnique = true)]
     public class FSTrade
     {
         [Key]
@@ -26,7 +28,7 @@ namespace Finsight.Models
         [Column(TypeName = "decimal(18,2)")]
         public required decimal Commission { get; set; }
 
-        public required DateOnly Date { get; set; }
+        public required DateTime Date { get; set; }
 
         public required string ExternalId { get; set; }
     }

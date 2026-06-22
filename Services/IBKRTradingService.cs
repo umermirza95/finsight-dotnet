@@ -7,6 +7,8 @@ using System.Xml.Linq;
 using Finsight.Enums;
 using Finsight.Interfaces;
 using Finsight.Models;
+using Finsight.Queries;
+using Finsight.DTOs;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -102,6 +104,115 @@ namespace Finsight.Services
             await ProcessCsvDataAsync(csvData, userId);
         }
 
+        public async Task MatchClosedTradesAsync(string userId)
+        {
+            var unclosedTrades = await _dbContext.FSTrades
+                .Where(t => t.FSUserId == userId 
+                && !_dbContext.FSClosedTrades.Any(c => c.OrderOpenId == t.ExternalId || c.OrderCloseId == t.ExternalId))
+                .ToListAsync();
+
+            var newClosedTrades = new List<FSClosedTrade>();
+            var groupedByTicker = unclosedTrades.GroupBy(t => t.Ticker);
+
+            foreach (var group in groupedByTicker)
+            {
+                // LIFO for Buys: Last In (most recent date) First Out
+                var buys = group.Where(t => t.TradeDirection == TradeDirection.BUY).OrderByDescending(t => t.Date).ToList();
+                // Process sells chronologically
+                var sells = group.Where(t => t.TradeDirection == TradeDirection.SELL).OrderBy(t => t.Date).ToList();
+
+                foreach (var sell in sells)
+                {
+                    // Find the most recent buy that happened on or before the sell date
+                    var matchedBuy = buys.FirstOrDefault(b => b.Date <= sell.Date);
+
+                    if (matchedBuy != null)
+                    {
+                        newClosedTrades.Add(new FSClosedTrade
+                        {
+                            Id = Guid.NewGuid(),
+                            FSUserId = userId,
+                            OrderOpenId = matchedBuy.ExternalId,
+                            OrderCloseId = sell.ExternalId
+                        });
+
+                        // Remove matched buy so it's not matched again
+                        buys.Remove(matchedBuy);
+                    }
+                }
+            }
+
+            if (newClosedTrades.Any())
+            {
+                _dbContext.FSClosedTrades.AddRange(newClosedTrades);
+                await _dbContext.SaveChangesAsync();
+                _logger.LogInformation($"Matched and created {newClosedTrades.Count} FSClosedTrades for user {userId}.");
+            }
+            else
+            {
+                _logger.LogInformation($"No new trade matches found for user {userId}.");
+            }
+        }
+
+        public async Task<List<FSTrade>> GetOpenTradesAsync(string userId)
+        {
+            return await _dbContext.FSTrades
+                .Where(t => t.FSUserId == userId 
+                && !_dbContext.FSClosedTrades.Any(c => c.OrderOpenId == t.ExternalId || c.OrderCloseId == t.ExternalId))
+                .OrderByDescending(t => t.Date)
+                .ToListAsync();
+        }
+
+        public async Task<List<ClosedTradeResponse>> GetClosedTradesAsync(string userId, GetTradesQuery queryParams)
+        {
+            queryParams.ApplyDefaultDateRange();
+
+            var query = _dbContext.FSClosedTrades
+                .Include(c => c.OpenTrade)
+                .Include(c => c.CloseTrade)
+                .Where(c => c.FSUserId == userId);
+
+            if (!string.IsNullOrEmpty(queryParams.Ticker))
+            {
+                query = query.Where(c => c.OpenTrade!.Ticker == queryParams.Ticker);
+            }
+
+            if (queryParams.StartDate.HasValue)
+            {
+                query = query.Where(c => c.CloseTrade!.Date >= queryParams.StartDate.Value);
+            }
+
+            if (queryParams.EndDate.HasValue)
+            {
+                query = query.Where(c => c.CloseTrade!.Date <= queryParams.EndDate.Value);
+            }
+
+            var closedTrades = await query.OrderByDescending(c => c.CloseTrade!.Date).ToListAsync();
+
+            return closedTrades.Select(c => 
+            {
+                // Assuming all opening trades are BUY based on user request "Safe to assume there will never be Short trades"
+                var buyPrice = c.OpenTrade!.TradePrice;
+                var sellPrice = c.CloseTrade!.TradePrice;
+                var quantity = c.OpenTrade.Quantity;
+                var totalComm = c.OpenTrade.Commission + c.CloseTrade.Commission;
+
+                return new ClosedTradeResponse 
+                {
+                    ClosedTradeId = c.Id,
+                    Ticker = c.OpenTrade.Ticker,
+                    OpenDate = c.OpenTrade.Date,
+                    CloseDate = c.CloseTrade.Date,
+                    Quantity = quantity,
+                    BuyPrice = buyPrice,
+                    SellPrice = sellPrice,
+                    Commission = totalComm,
+                    NetProfit = ((sellPrice - buyPrice) * quantity) - totalComm
+                };
+            }).ToList();
+        }
+
+
         private async Task ProcessCsvDataAsync(string csvData, string userId)
         {
             var lines = csvData.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
@@ -110,12 +221,17 @@ namespace Finsight.Services
 
             foreach (var line in lines)
             {
-                var parts = line.Split(',');
-                if (parts.Length >= 7)
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                
+                var parts = SplitCsvLine(line);
+                if (parts.Length >= 8)
                 {
                     var buySell = parts[5].Trim().ToUpper();
-                    if (buySell == "BUY" || buySell == "SELL")
+                    if (buySell == "BUY" || buySell == "SELL" || buySell == "B" || buySell == "S")
                     {
+                        if (buySell == "B") buySell = "BUY";
+                        if (buySell == "S") buySell = "SELL";
+
                         if (decimal.TryParse(parts[1], out var price) &&
                             decimal.TryParse(parts[2], out var qty) &&
                             decimal.TryParse(parts[3], out var comm))
@@ -128,8 +244,13 @@ namespace Finsight.Services
                                 IBCommission = comm,
                                 TradeDate = parts[4].Trim(),
                                 BuySell = buySell,
-                                IBOrderID = parts[6].Trim()
+                                IBOrderID = parts[6].Trim(),
+                                DateTime = parts[7].Trim()
                             });
+                        }
+                        else
+                        {
+                            _logger.LogWarning("Found a Trade row but failed to parse decimals: Price={Price}, Qty={Qty}, Comm={Comm}", parts[1], parts[2], parts[3]);
                         }
                     }
                 }
@@ -137,21 +258,18 @@ namespace Finsight.Services
 
             var grouped = records.GroupBy(r => r.IBOrderID).ToList();
             var orderIds = grouped.Select(g => g.Key).ToList();
-            _logger.LogInformation("Found {GroupCount} unique trades based on IBOrderID.", grouped.Count);
+         
 
             var existingIds = await _dbContext.FSTrades
                 .Where(t => orderIds.Contains(t.ExternalId))
                 .Select(t => t.ExternalId)
                 .ToListAsync();
 
-            _logger.LogInformation("{ExistingCount} trades already exist in the database and will be skipped.", existingIds.Count);
-
             var newTrades = new List<FSTrade>();
 
             foreach (var group in grouped)
             {
-                _logger.LogInformation("Processing trade group with IBOrderID: {OrderId}, containing {RecordCount} records.", group.Key, group.Count());
-                if (!existingIds.Contains(group.Key))
+                if (!existingIds.Contains(group.Key!))
                 {
                     var first = group.First();
                     var direction = first.BuySell == "BUY" ? TradeDirection.BUY : TradeDirection.SELL;
@@ -160,7 +278,7 @@ namespace Finsight.Services
                     var totalComm = group.Sum(x => Math.Abs(x.IBCommission));
                     var vwap = totalQty > 0 ? group.Sum(x => x.TradePrice * Math.Abs(x.Quantity)) / totalQty : first.TradePrice;
 
-                    DateOnly.TryParseExact(first.TradeDate, "yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsedDate);
+                    DateTime.TryParseExact(first.DateTime, "yyyyMMdd;HHmmss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var parsedDate);
 
                     newTrades.Add(new FSTrade
                     {
@@ -198,6 +316,28 @@ namespace Finsight.Services
             public string? TradeDate { get; set; }
             public string? BuySell { get; set; }
             public string? IBOrderID { get; set; }
+            public string? DateTime { get; set; }
+        }
+
+        private static string[] SplitCsvLine(string line)
+        {
+            var result = new List<string>();
+            bool inQuotes = false;
+            int startIndex = 0;
+            for (int i = 0; i < line.Length; i++)
+            {
+                if (line[i] == '\"')
+                {
+                    inQuotes = !inQuotes;
+                }
+                else if (line[i] == ',' && !inQuotes)
+                {
+                    result.Add(line.Substring(startIndex, i - startIndex).Trim('"', ' '));
+                    startIndex = i + 1;
+                }
+            }
+            result.Add(line.Substring(startIndex).Trim('"', ' '));
+            return result.ToArray();
         }
     }
 }

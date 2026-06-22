@@ -2,6 +2,7 @@ using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Finsight.Interfaces;
+using Finsight.Queries;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -36,6 +37,56 @@ namespace Finsight.Controller
             }
         }
 
+        [HttpPost("match")]
+        public async Task<IActionResult> MatchTradesAsync()
+        {
+            try
+            {
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+                await _tradingService.MatchClosedTradesAsync(userId);
+                return Ok(new { message = "Trades matched and closed successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpGet("open")]
+        public async Task<IActionResult> GetOpenTradesAsync()
+        {
+            try
+            {
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+                var openTrades = await _tradingService.GetOpenTradesAsync(userId);
+                return Ok(openTrades);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpGet("closed")]
+        public async Task<IActionResult> GetClosedTradesAsync([FromQuery] GetTradesQuery query)
+        {
+            try
+            {
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+                var closedTrades = await _tradingService.GetClosedTradesAsync(userId, query);
+                return Ok(closedTrades);
+                }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
 
         [HttpGet("ibkr-test")]
 
