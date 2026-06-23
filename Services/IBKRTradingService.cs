@@ -154,13 +154,35 @@ namespace Finsight.Services
             }
         }
 
-        public async Task<List<FSTrade>> GetOpenTradesAsync(string userId)
+        public async Task<OpenTradesResponse> GetOpenTradesAsync(string userId)
         {
-            return await _dbContext.FSTrades
+            var trades = await _dbContext.FSTrades
                 .Where(t => t.FSUserId == userId 
                 && !_dbContext.FSClosedTrades.Any(c => c.OrderOpenId == t.ExternalId || c.OrderCloseId == t.ExternalId))
                 .OrderByDescending(t => t.Date)
                 .ToListAsync();
+
+            var config = await _dbContext.TradingConfigs.FirstOrDefaultAsync(c => c.FSUserId == userId);
+
+            decimal totalCapital = config?.TradingCapital ?? 0;
+            decimal trancheSize = config?.TrancheSize ?? 0;
+            
+            decimal capitalUsed = trades.Sum(t => t.TradePrice * Math.Abs(t.Quantity));
+            int availableTranches = 0;
+
+            if (trancheSize > 0)
+            {
+                availableTranches = (int)Math.Floor((totalCapital - capitalUsed) / trancheSize);
+                if (availableTranches < 0) availableTranches = 0;
+            }
+
+            return new OpenTradesResponse
+            {
+                Trades = trades,
+                TotalCapital = totalCapital,
+                CapitalUsed = capitalUsed,
+                AvailableTranches = availableTranches
+            };
         }
 
         public async Task<List<ClosedTradeResponse>> GetClosedTradesAsync(string userId, GetTradesQuery queryParams)

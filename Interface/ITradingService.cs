@@ -10,7 +10,7 @@ namespace Finsight.Interfaces
     {
         Task FetchMonthlyTradesAsync(string userId);
         Task MatchClosedTradesAsync(string userId);
-        Task<List<FSTrade>> GetOpenTradesAsync(string userId);
+        Task<OpenTradesResponse> GetOpenTradesAsync(string userId);
         Task<List<ClosedTradeResponse>> GetClosedTradesAsync(string userId, GetTradesQuery query);
     }
 }

@@ -19,6 +19,7 @@ public class AppDbContext : IdentityDbContext<FSUser>
     public DbSet<FSTransactionSuggestion> FSTransactionSuggestions { get; set; }
     public DbSet<FSTrade> FSTrades { get; set; }
     public DbSet<FSClosedTrade> FSClosedTrades { get; set; }
+    public DbSet<FSTradingConfig> TradingConfigs { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -212,6 +213,14 @@ public class AppDbContext : IdentityDbContext<FSUser>
                   .HasPrincipalKey(t => t.ExternalId)
                   .HasForeignKey(ct => ct.OrderCloseId)
                   .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<FSTradingConfig>(entity =>
+        {
+            entity.HasOne(tc => tc.User)
+                  .WithMany()
+                  .HasForeignKey(tc => tc.FSUserId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
