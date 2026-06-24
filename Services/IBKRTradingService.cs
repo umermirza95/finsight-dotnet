@@ -21,13 +21,15 @@ namespace Finsight.Services
         private readonly AppDbContext _dbContext;
         private readonly IConfiguration _configuration;
         private readonly ILogger<IBKRTradingService> _logger;
+        private readonly IMarketDataService _marketDataService;
 
-        public IBKRTradingService(HttpClient httpClient, AppDbContext dbContext, IConfiguration configuration, ILogger<IBKRTradingService> logger)
+        public IBKRTradingService(HttpClient httpClient, AppDbContext dbContext, IConfiguration configuration, ILogger<IBKRTradingService> logger, IMarketDataService marketDataService)
         {
             _httpClient = httpClient;
             _dbContext = dbContext;
             _configuration = configuration;
             _logger = logger;
+            _marketDataService = marketDataService;
         }
 
         public async Task FetchMonthlyTradesAsync(string userId)
@@ -158,9 +160,19 @@ namespace Finsight.Services
         {
             var trades = await _dbContext.FSTrades
                 .Where(t => t.FSUserId == userId 
+                && t.Ticker != "EUR.USD"
                 && !_dbContext.FSClosedTrades.Any(c => c.OrderOpenId == t.ExternalId || c.OrderCloseId == t.ExternalId))
                 .OrderByDescending(t => t.Date)
                 .ToListAsync();
+
+            var tickers = trades.Select(t => t.Ticker).Distinct().ToList();
+            var prices = await _marketDataService.GetPricesAsync(tickers);
+
+            var tradeDtos = trades.Select(trade => 
+            {
+                prices.TryGetValue(trade.Ticker, out var currentPrice);
+                return OpenTradeDTO.FromEntity(trade, currentPrice);
+            }).ToList();
 
             var config = await _dbContext.TradingConfigs.FirstOrDefaultAsync(c => c.FSUserId == userId);
 
@@ -178,7 +190,7 @@ namespace Finsight.Services
 
             return new OpenTradesResponse
             {
-                Trades = trades,
+                Trades = tradeDtos,
                 TotalCapital = totalCapital,
                 CapitalUsed = capitalUsed,
                 AvailableTranches = availableTranches
