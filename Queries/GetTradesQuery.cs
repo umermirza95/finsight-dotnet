@@ -10,6 +10,15 @@ namespace Finsight.Queries
 
         public void ApplyDefaultDateRange()
         {
+            if (StartDate.HasValue && StartDate.Value.Kind == DateTimeKind.Unspecified)
+            {
+                StartDate = DateTime.SpecifyKind(StartDate.Value, DateTimeKind.Utc);
+            }
+            if (EndDate.HasValue && EndDate.Value.Kind == DateTimeKind.Unspecified)
+            {
+                EndDate = DateTime.SpecifyKind(EndDate.Value, DateTimeKind.Utc);
+            }
+
             if (!StartDate.HasValue || !EndDate.HasValue)
             {
                 var now = DateTime.UtcNow;
