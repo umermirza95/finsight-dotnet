@@ -258,7 +258,7 @@ namespace Finsight.Services
                 if (string.IsNullOrWhiteSpace(line)) continue;
                 
                 var parts = SplitCsvLine(line);
-                if (parts.Length >= 8)
+                if (parts.Length >= 9)
                 {
                     var buySell = parts[5].Trim().ToUpper();
                     if (buySell == "BUY" || buySell == "SELL" || buySell == "B" || buySell == "S")
@@ -266,9 +266,9 @@ namespace Finsight.Services
                         if (buySell == "B") buySell = "BUY";
                         if (buySell == "S") buySell = "SELL";
 
-                        if (decimal.TryParse(parts[1], out var price) &&
-                            decimal.TryParse(parts[2], out var qty) &&
-                            decimal.TryParse(parts[3], out var comm))
+                        if (decimal.TryParse(parts[7], out var price) &&
+                            decimal.TryParse(parts[6], out var qty) &&
+                            decimal.TryParse(parts[8], out var comm))
                         {
                             records.Add(new IBKRTradeRecord
                             {
@@ -278,13 +278,13 @@ namespace Finsight.Services
                                 IBCommission = comm,
                                 TradeDate = parts[4].Trim(),
                                 BuySell = buySell,
-                                IBOrderID = parts[6].Trim(),
-                                DateTime = parts[7].Trim()
+                                IBOrderID = parts[1].Trim(),
+                                DateTime = parts[3].Trim()
                             });
                         }
                         else
                         {
-                            _logger.LogWarning("Found a Trade row but failed to parse decimals: Price={Price}, Qty={Qty}, Comm={Comm}", parts[1], parts[2], parts[3]);
+                            _logger.LogWarning("Found a Trade row but failed to parse decimals: Price={Price}, Qty={Qty}, Comm={Comm}", parts[7], parts[6], parts[8]);
                         }
                     }
                 }
