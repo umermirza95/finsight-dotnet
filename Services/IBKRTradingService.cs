@@ -104,6 +104,7 @@ namespace Finsight.Services
             }
 
             await ProcessCsvDataAsync(csvData, userId);
+            await MatchClosedTradesAsync(userId);
         }
 
         public async Task MatchClosedTradesAsync(string userId)
