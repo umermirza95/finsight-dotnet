@@ -9,6 +9,8 @@ namespace Finsight.DTOs
         public DateTime OpenDate { get; set; }
         public DateTime CloseDate { get; set; }
         public decimal Quantity { get; set; }
+        public decimal OpenTradeQuantity { get; set; }
+        public decimal ClosedTradeQuantity { get; set; }
         public decimal BuyPrice { get; set; }
         public decimal SellPrice { get; set; }
         public decimal Commission { get; set; }

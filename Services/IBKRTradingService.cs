@@ -239,6 +239,8 @@ namespace Finsight.Services
                     OpenDate = c.OpenTrade.Date,
                     CloseDate = c.CloseTrade.Date,
                     Quantity = quantity,
+                    OpenTradeQuantity = c.OpenTrade.Quantity,
+                    ClosedTradeQuantity = c.CloseTrade.Quantity,
                     BuyPrice = buyPrice,
                     SellPrice = sellPrice,
                     Commission = totalComm,
