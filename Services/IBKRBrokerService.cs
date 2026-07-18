@@ -7,29 +7,25 @@ using System.Xml.Linq;
 using Finsight.Enums;
 using Finsight.Interfaces;
 using Finsight.Models;
-using Finsight.Queries;
-using Finsight.DTOs;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace Finsight.Services
 {
-    public class IBKRTradingService : ITradingService
+    public class IBKRBrokerService : IBrokerService
     {
         private readonly HttpClient _httpClient;
         private readonly AppDbContext _dbContext;
         private readonly IConfiguration _configuration;
-        private readonly ILogger<IBKRTradingService> _logger;
-        private readonly IMarketDataService _marketDataService;
+        private readonly ILogger<IBKRBrokerService> _logger;
 
-        public IBKRTradingService(HttpClient httpClient, AppDbContext dbContext, IConfiguration configuration, ILogger<IBKRTradingService> logger, IMarketDataService marketDataService)
+        public IBKRBrokerService(HttpClient httpClient, AppDbContext dbContext, IConfiguration configuration, ILogger<IBKRBrokerService> logger)
         {
             _httpClient = httpClient;
             _dbContext = dbContext;
             _configuration = configuration;
             _logger = logger;
-            _marketDataService = marketDataService;
         }
 
         public async Task FetchMonthlyTradesAsync(string userId)
@@ -104,151 +100,8 @@ namespace Finsight.Services
             }
 
             await ProcessCsvDataAsync(csvData, userId);
-            await MatchClosedTradesAsync(userId);
+            // await MatchClosedTradesAsync(userId); // Moved to FSTradingService
         }
-
-        public async Task MatchClosedTradesAsync(string userId)
-        {
-            var unclosedTrades = await _dbContext.FSTrades
-                .Where(t => t.FSUserId == userId 
-                && !_dbContext.FSClosedTrades.Any(c => c.OrderOpenId == t.ExternalId || c.OrderCloseId == t.ExternalId))
-                .ToListAsync();
-
-            var newClosedTrades = new List<FSClosedTrade>();
-            var groupedByTicker = unclosedTrades.GroupBy(t => t.Ticker);
-
-            foreach (var group in groupedByTicker)
-            {
-                // LIFO for Buys: Last In (most recent date) First Out
-                var buys = group.Where(t => t.TradeDirection == TradeDirection.BUY).OrderByDescending(t => t.Date).ToList();
-                // Process sells chronologically
-                var sells = group.Where(t => t.TradeDirection == TradeDirection.SELL).OrderBy(t => t.Date).ToList();
-
-                foreach (var sell in sells)
-                {
-                    // Find the most recent buy that happened on or before the sell date
-                    var matchedBuy = buys.FirstOrDefault(b => b.Date <= sell.Date);
-
-                    if (matchedBuy != null)
-                    {
-                        newClosedTrades.Add(new FSClosedTrade
-                        {
-                            Id = Guid.NewGuid(),
-                            FSUserId = userId,
-                            OrderOpenId = matchedBuy.ExternalId,
-                            OrderCloseId = sell.ExternalId
-                        });
-
-                        // Remove matched buy so it's not matched again
-                        buys.Remove(matchedBuy);
-                    }
-                }
-            }
-
-            if (newClosedTrades.Any())
-            {
-                _dbContext.FSClosedTrades.AddRange(newClosedTrades);
-                await _dbContext.SaveChangesAsync();
-                _logger.LogInformation($"Matched and created {newClosedTrades.Count} FSClosedTrades for user {userId}.");
-            }
-            else
-            {
-                _logger.LogInformation($"No new trade matches found for user {userId}.");
-            }
-        }
-
-        public async Task<OpenTradesResponse> GetOpenTradesAsync(string userId)
-        {
-            var trades = await _dbContext.FSTrades
-                .Where(t => t.FSUserId == userId 
-                && t.Ticker != "EUR.USD"
-                && !_dbContext.FSClosedTrades.Any(c => c.OrderOpenId == t.ExternalId || c.OrderCloseId == t.ExternalId))
-                .OrderByDescending(t => t.Date)
-                .ToListAsync();
-
-            var tickers = trades.Select(t => t.Ticker).Distinct().ToList();
-            var prices = await _marketDataService.GetPricesAsync(tickers);
-
-            var tradeDtos = trades.Select(trade => 
-            {
-                prices.TryGetValue(trade.Ticker, out var currentPrice);
-                return OpenTradeDTO.FromEntity(trade, currentPrice);
-            }).ToList();
-
-            var config = await _dbContext.TradingConfigs.FirstOrDefaultAsync(c => c.FSUserId == userId);
-
-            decimal totalCapital = config?.TradingCapital ?? 0;
-            decimal trancheSize = config?.TrancheSize ?? 0;
-            
-            decimal capitalUsed = trades.Sum(t => t.TradePrice * Math.Abs(t.Quantity));
-            int availableTranches = 0;
-
-            if (trancheSize > 0)
-            {
-                availableTranches = (int)Math.Floor((totalCapital - capitalUsed) / trancheSize);
-                if (availableTranches < 0) availableTranches = 0;
-            }
-
-            return new OpenTradesResponse
-            {
-                Trades = tradeDtos,
-                TotalCapital = totalCapital,
-                CapitalUsed = capitalUsed,
-                AvailableTranches = availableTranches
-            };
-        }
-
-        public async Task<List<ClosedTradeResponse>> GetClosedTradesAsync(string userId, GetTradesQuery queryParams)
-        {
-            queryParams.ApplyDefaultDateRange();
-
-            var query = _dbContext.FSClosedTrades
-                .Include(c => c.OpenTrade)
-                .Include(c => c.CloseTrade)
-                .Where(c => c.FSUserId == userId);
-
-            if (!string.IsNullOrEmpty(queryParams.Ticker))
-            {
-                query = query.Where(c => c.OpenTrade!.Ticker == queryParams.Ticker);
-            }
-
-            if (queryParams.StartDate.HasValue)
-            {
-                query = query.Where(c => c.CloseTrade!.Date >= queryParams.StartDate.Value);
-            }
-
-            if (queryParams.EndDate.HasValue)
-            {
-                query = query.Where(c => c.CloseTrade!.Date <= queryParams.EndDate.Value);
-            }
-
-            var closedTrades = await query.OrderByDescending(c => c.CloseTrade!.Date).ToListAsync();
-
-            return closedTrades.Select(c => 
-            {
-                // Assuming all opening trades are BUY based on user request "Safe to assume there will never be Short trades"
-                var buyPrice = c.OpenTrade!.TradePrice;
-                var sellPrice = c.CloseTrade!.TradePrice;
-                var quantity = c.OpenTrade.Quantity;
-                var totalComm = c.OpenTrade.Commission + c.CloseTrade.Commission;
-
-                return new ClosedTradeResponse 
-                {
-                    ClosedTradeId = c.Id,
-                    Ticker = c.OpenTrade.Ticker,
-                    OpenDate = c.OpenTrade.Date,
-                    CloseDate = c.CloseTrade.Date,
-                    Quantity = quantity,
-                    OpenTradeQuantity = c.OpenTrade.Quantity,
-                    ClosedTradeQuantity = c.CloseTrade.Quantity,
-                    BuyPrice = buyPrice,
-                    SellPrice = sellPrice,
-                    Commission = totalComm,
-                    NetProfit = ((sellPrice - buyPrice) * quantity) - totalComm
-                };
-            }).ToList();
-        }
-
 
         private async Task ProcessCsvDataAsync(string csvData, string userId)
         {

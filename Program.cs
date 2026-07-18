@@ -32,7 +32,8 @@ builder.Services.AddScoped<IFileService, FSLinuxFile>();
 builder.Services.AddScoped<IBudgetService, FSBudgetService>();
 builder.Services.AddScoped<IExchangeRateService, FSExchangeRateService>();
 builder.Services.AddHttpClient<IFXAPIService, WiseFXAPIService>();
-builder.Services.AddHttpClient<ITradingService, IBKRTradingService>();
+builder.Services.AddHttpClient<IBrokerService, IBKRBrokerService>();
+builder.Services.AddScoped<ITradingService, FSTradingService>();
 builder.Services.AddHttpClient<IMarketDataService, AlpacaMarketDataService>();
 
 builder.Logging.AddOpenTelemetry(logging =>
