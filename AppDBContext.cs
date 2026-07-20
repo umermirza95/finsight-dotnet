@@ -215,12 +215,6 @@ public class AppDbContext : IdentityDbContext<FSUser>
                   .OnDelete(DeleteBehavior.Restrict);
         });
 
-        modelBuilder.Entity<FSTradingConfig>(entity =>
-        {
-            entity.HasOne(tc => tc.User)
-                  .WithMany()
-                  .HasForeignKey(tc => tc.FSUserId)
-                  .OnDelete(DeleteBehavior.Cascade);
-        });
+
     }
 }

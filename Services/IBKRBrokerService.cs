@@ -7,6 +7,7 @@ using System.Xml.Linq;
 using Finsight.Enums;
 using Finsight.Interfaces;
 using Finsight.Models;
+using IBApi;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -19,13 +20,100 @@ namespace Finsight.Services
         private readonly AppDbContext _dbContext;
         private readonly IConfiguration _configuration;
         private readonly ILogger<IBKRBrokerService> _logger;
+        private readonly IBKR.IBKRConnectionHandler _connectionHandler;
 
-        public IBKRBrokerService(HttpClient httpClient, AppDbContext dbContext, IConfiguration configuration, ILogger<IBKRBrokerService> logger)
+        public IBKRBrokerService(HttpClient httpClient, AppDbContext dbContext, IConfiguration configuration, ILogger<IBKRBrokerService> logger, IBKR.IBKRConnectionHandler connectionHandler)
         {
             _httpClient = httpClient;
             _dbContext = dbContext;
             _configuration = configuration;
             _logger = logger;
+            _connectionHandler = connectionHandler;
+        }
+
+        public bool IsConnected => _connectionHandler.Client.IsConnected();
+
+        public void Connect()
+        {
+            var host = _configuration["IBKR:Host"] ?? "127.0.0.1";
+            var port = int.Parse(_configuration["IBKR:Port"] ?? "7497");
+            var clientId = int.Parse(_configuration["IBKR:ClientId"] ?? "1");
+            _connectionHandler.Connect(host, port, clientId);
+        }
+
+        public void Disconnect()
+        {
+            _connectionHandler.Disconnect();
+        }
+
+        public async Task PlaceLimitOrderAsync(string ticker, TradeDirection direction, decimal limitPrice, decimal quantity)
+        {
+            if (!_connectionHandler.Client.IsConnected())
+                throw new Exception("IBKR is not connected.");
+
+            var config = await _dbContext.TradingConfigs.FirstOrDefaultAsync();
+            if (config != null && config.LogsOnly)
+            {
+                return;
+            }
+
+            var contract = new Contract
+            {
+                Symbol = ticker,
+                SecType = "STK",
+                Exchange = "SMART",
+                Currency = "USD"
+            };
+
+            var order = new Order
+            {
+                Action = direction == TradeDirection.BUY ? "BUY" : "SELL",
+                OrderType = "LMT",
+                TotalQuantity = (double)quantity,
+                LmtPrice = (double)limitPrice,
+                Tif = "GTC",
+                OutsideRth = true
+            };
+
+            var orderId = _connectionHandler.GetNextOrderId();
+            _connectionHandler.Client.placeOrder(orderId, contract, order);
+            
+            _logger.LogInformation($"Placed limit order {orderId} for {ticker} {direction} {quantity} @ {limitPrice}");
+        }
+
+        public async Task CancelOrderAsync(string brokerOrderId)
+        {
+            if (!_connectionHandler.Client.IsConnected())
+                throw new Exception("IBKR is not connected.");
+
+            var config = await _dbContext.TradingConfigs.FirstOrDefaultAsync();
+            if (config != null && config.LogsOnly)
+            {
+               
+                return;
+            }
+
+            if (int.TryParse(brokerOrderId, out var id))
+            {
+                _connectionHandler.Client.cancelOrder(id);
+                _logger.LogInformation($"Cancelled order {id}");
+            }
+        }
+
+        public async Task CancelAllOrdersAsync()
+        {
+            if (!_connectionHandler.Client.IsConnected())
+                throw new Exception("IBKR is not connected.");
+
+            var config = await _dbContext.TradingConfigs.FirstOrDefaultAsync();
+            if (config != null && config.LogsOnly)
+            {
+                
+                return;
+            }
+
+            _connectionHandler.Client.reqGlobalCancel();
+            _logger.LogInformation("Requested global cancel of all open orders.");
         }
 
         public async Task FetchMonthlyTradesAsync(string userId)

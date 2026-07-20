@@ -9,15 +9,20 @@ namespace Finsight.Models
         [Key]
         public Guid Id { get; set; }
 
-        [Required]
-        public string FSUserId { get; set; } = string.Empty;
-
         [Column(TypeName = "decimal(18,2)")]
         public decimal TradingCapital { get; set; }
 
         [Column(TypeName = "decimal(18,2)")]
         public decimal TrancheSize { get; set; }
 
-        public FSUser? User { get; set; }
+        public bool AutoTrade { get; set; } = false;
+
+        public bool LogsOnly { get; set; } = true;
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal SharesPerTranche { get; set; }
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal DistancePerTranche { get; set; }
     }
 }

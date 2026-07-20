@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace finsight_dotnet.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260719122048_AddAutoTradeFields")]
+    partial class AddAutoTradeFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -298,8 +301,9 @@ namespace finsight_dotnet.Migrations
                     b.Property<decimal>("DistancePerTranche")
                         .HasColumnType("decimal(18,2)");
 
-                    b.Property<bool>("LogsOnly")
-                        .HasColumnType("boolean");
+                    b.Property<string>("FSUserId")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<decimal>("SharesPerTranche")
                         .HasColumnType("decimal(18,2)");
@@ -311,6 +315,8 @@ namespace finsight_dotnet.Migrations
                         .HasColumnType("decimal(18,2)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("FSUserId");
 
                     b.ToTable("TradingConfigs");
                 });
@@ -815,6 +821,17 @@ namespace finsight_dotnet.Migrations
                         .HasForeignKey("FSUserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Finsight.Models.FSTradingConfig", b =>
+                {
+                    b.HasOne("Finsight.Models.FSUser", "User")
+                        .WithMany()
+                        .HasForeignKey("FSUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Finsight.Models.FSTransaction", b =>

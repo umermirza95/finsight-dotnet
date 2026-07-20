@@ -111,5 +111,48 @@ namespace Finsight.Controller
             }
 
         }
+        [HttpGet("config")]
+        public async Task<IActionResult> GetConfigAsync()
+        {
+            try
+            {
+                var config = await _tradingService.GetTradingConfigAsync();
+                return Ok(config);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpPut("config")]
+        public async Task<IActionResult> UpdateConfigAsync([FromBody] DTOs.UpdateTradingConfigDTO dto, [FromServices] IBrokerService brokerService)
+        {
+            try
+            {
+                var previousConfig = await _tradingService.GetTradingConfigAsync();
+                bool wasAutoTradeOn = previousConfig?.AutoTrade ?? false;
+
+                var config = await _tradingService.UpdateTradingConfigAsync(dto);
+
+                if (dto.AutoTrade.HasValue && dto.AutoTrade.Value != wasAutoTradeOn)
+                {
+                    if (dto.AutoTrade.Value)
+                    {
+                        brokerService.Connect();
+                    }
+                    else
+                    {
+                        brokerService.Disconnect();
+                    }
+                }
+
+                return Ok(config);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
     }
 }
