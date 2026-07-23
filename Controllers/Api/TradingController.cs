@@ -112,12 +112,12 @@ namespace Finsight.Controller
 
         }
         [HttpGet("config")]
-        public async Task<IActionResult> GetConfigAsync()
+        public async Task<IActionResult> GetConfigAsync([FromServices] IBrokerService brokerService)
         {
             try
             {
                 var config = await _tradingService.GetTradingConfigAsync();
-                return Ok(config);
+                return Ok(new { config = config, isConnected = brokerService.IsConnected });
             }
             catch (Exception ex)
             {

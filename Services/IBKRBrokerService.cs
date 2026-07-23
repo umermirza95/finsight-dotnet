@@ -21,14 +21,16 @@ namespace Finsight.Services
         private readonly IConfiguration _configuration;
         private readonly ILogger<IBKRBrokerService> _logger;
         private readonly IBKR.IBKRConnectionHandler _connectionHandler;
+        private readonly IMessagingService _messagingService;
 
-        public IBKRBrokerService(HttpClient httpClient, AppDbContext dbContext, IConfiguration configuration, ILogger<IBKRBrokerService> logger, IBKR.IBKRConnectionHandler connectionHandler)
+        public IBKRBrokerService(HttpClient httpClient, AppDbContext dbContext, IConfiguration configuration, ILogger<IBKRBrokerService> logger, IBKR.IBKRConnectionHandler connectionHandler, IMessagingService messagingService)
         {
             _httpClient = httpClient;
             _dbContext = dbContext;
             _configuration = configuration;
             _logger = logger;
             _connectionHandler = connectionHandler;
+            _messagingService = messagingService;
         }
 
         public bool IsConnected => _connectionHandler.Client.IsConnected();
@@ -46,16 +48,15 @@ namespace Finsight.Services
             _connectionHandler.Disconnect();
         }
 
-        public async Task PlaceLimitOrderAsync(string ticker, TradeDirection direction, decimal limitPrice, decimal quantity)
+        public async Task PlaceLimitOrderAsync(string ticker, TradeDirection direction, decimal limitPrice, decimal quantity, bool logsOnly)
         {
             if (!_connectionHandler.Client.IsConnected())
                 throw new Exception("IBKR is not connected.");
 
-            var config = await _dbContext.TradingConfigs.FirstOrDefaultAsync();
-            if (config != null && config.LogsOnly)
-            {
+            await _messagingService.SendMessageAsync($"*Action Intent*: Placing ${direction} limit order for {quantity} shares of {ticker} at ${limitPrice}.");
+
+            if (logsOnly)
                 return;
-            }
 
             var contract = new Contract
             {
@@ -77,27 +78,8 @@ namespace Finsight.Services
 
             var orderId = _connectionHandler.GetNextOrderId();
             _connectionHandler.Client.placeOrder(orderId, contract, order);
-            
+
             _logger.LogInformation($"Placed limit order {orderId} for {ticker} {direction} {quantity} @ {limitPrice}");
-        }
-
-        public async Task CancelOrderAsync(string brokerOrderId)
-        {
-            if (!_connectionHandler.Client.IsConnected())
-                throw new Exception("IBKR is not connected.");
-
-            var config = await _dbContext.TradingConfigs.FirstOrDefaultAsync();
-            if (config != null && config.LogsOnly)
-            {
-               
-                return;
-            }
-
-            if (int.TryParse(brokerOrderId, out var id))
-            {
-                _connectionHandler.Client.cancelOrder(id);
-                _logger.LogInformation($"Cancelled order {id}");
-            }
         }
 
         public async Task CancelAllOrdersAsync()
@@ -108,7 +90,7 @@ namespace Finsight.Services
             var config = await _dbContext.TradingConfigs.FirstOrDefaultAsync();
             if (config != null && config.LogsOnly)
             {
-                
+
                 return;
             }
 
@@ -200,7 +182,7 @@ namespace Finsight.Services
             foreach (var line in lines)
             {
                 if (string.IsNullOrWhiteSpace(line)) continue;
-                
+
                 var parts = SplitCsvLine(line);
                 if (parts.Length >= 9)
                 {
@@ -236,7 +218,7 @@ namespace Finsight.Services
 
             var grouped = records.GroupBy(r => r.IBOrderID).ToList();
             var orderIds = grouped.Select(g => g.Key).ToList();
-         
+
 
             var existingIds = await _dbContext.FSTrades
                 .Where(t => orderIds.Contains(t.ExternalId))

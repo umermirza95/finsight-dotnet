@@ -18,15 +18,15 @@ namespace Finsight.Services
         private readonly ILogger<FSTradingService> _logger;
         private readonly IMarketDataService _marketDataService;
         private readonly IBrokerService _brokerService;
-        private readonly IMessagingService _messagingService;
+      
 
-        public FSTradingService(AppDbContext dbContext, ILogger<FSTradingService> logger, IMarketDataService marketDataService, IBrokerService brokerService, IMessagingService messagingService)
+        public FSTradingService(AppDbContext dbContext, ILogger<FSTradingService> logger, IMarketDataService marketDataService, IBrokerService brokerService)
         {
             _dbContext = dbContext;
             _logger = logger;
             _marketDataService = marketDataService;
             _brokerService = brokerService;
-            _messagingService = messagingService;
+          
         }
 
         public async Task FetchMonthlyTradesAsync(string userId)
@@ -173,49 +173,65 @@ namespace Finsight.Services
             }).ToList();
         }
 
-        public async Task HandleTradeExecutionAsync(string ticker, TradeDirection direction, decimal fillPrice, decimal quantity)
+        public async Task HandleTradeExecutionAsync(FSTrade trade)
         {
+            _dbContext.FSTrades.Add(trade);
+            await _dbContext.SaveChangesAsync();
+
+            if (trade.TradeDirection == TradeDirection.SELL)
+            {
+                await MatchClosedTradesAsync(trade.FSUserId);
+            }
+
             var config = await GetTradingConfigAsync();
-            if (config == null || !config.AutoTrade)
+            if (config == null || !config.AutoTrade || config.SharesPerTranche == 0)
             {
                 _logger.LogInformation("AutoTrade is disabled. Ignoring trade execution.");
                 return;
             }
 
-            decimal shares = config.SharesPerTranche > 0 ? config.SharesPerTranche : quantity;
+            decimal shares = config.SharesPerTranche;
             decimal distance = config.DistancePerTranche;
 
-            // Globally cancel all orders per user request before placing new ones
-            await _messagingService.SendMessageAsync($"*Action Intent*: Cancelling all open orders for {ticker}.");
             await _brokerService.CancelAllOrdersAsync();
 
-            if (direction == TradeDirection.BUY)
+            var targetTicker = !string.IsNullOrWhiteSpace(config.Ticker) ? config.Ticker : trade.Ticker;
+
+            if (trade.TradeDirection == TradeDirection.BUY)
             {
-                decimal targetSellPrice = fillPrice + distance;
-                await _messagingService.SendMessageAsync($"*Action Intent*: Placing SELL limit order for {shares} shares of {ticker} at ${targetSellPrice}.");
-                await _brokerService.PlaceLimitOrderAsync(ticker, TradeDirection.SELL, targetSellPrice, shares);
+                decimal targetSellPrice = trade.TradePrice + distance;
+               
+                await _brokerService.PlaceLimitOrderAsync(targetTicker, TradeDirection.SELL, targetSellPrice, shares, config.LogsOnly);
                 
-                decimal targetBuyPrice = fillPrice - distance;
-                await _messagingService.SendMessageAsync($"*Action Intent*: Placing BUY limit order for {shares} shares of {ticker} at ${targetBuyPrice}.");
-                await _brokerService.PlaceLimitOrderAsync(ticker, TradeDirection.BUY, targetBuyPrice, shares);
+                decimal targetBuyPrice = trade.TradePrice - distance;
+                await _brokerService.PlaceLimitOrderAsync(targetTicker, TradeDirection.BUY, targetBuyPrice, shares, config.LogsOnly);
             }
             else // SELL
             {
-                decimal targetBuyPrice = fillPrice - distance;
-                await _messagingService.SendMessageAsync($"*Action Intent*: Placing BUY limit order for {shares} shares of {ticker} at ${targetBuyPrice}.");
-                await _brokerService.PlaceLimitOrderAsync(ticker, TradeDirection.BUY, targetBuyPrice, shares);
+                decimal targetBuyPrice = trade.TradePrice - distance;
+                await _brokerService.PlaceLimitOrderAsync(targetTicker, TradeDirection.BUY, targetBuyPrice, shares, config.LogsOnly);
 
                 // Get most recent open buy trade from the database
                 var mostRecentBuyTrade = await _dbContext.FSTrades
-                    .Where(t => t.Ticker == ticker && t.TradeDirection == TradeDirection.BUY && !_dbContext.FSClosedTrades.Any(c => c.OrderOpenId == t.ExternalId))
+                    .Where(t => t.Ticker == targetTicker && t.TradeDirection == TradeDirection.BUY && !_dbContext.FSClosedTrades.Any(c => c.OrderOpenId == t.ExternalId))
                     .OrderByDescending(t => t.Date)
                     .FirstOrDefaultAsync();
 
-                if (mostRecentBuyTrade != null)
+                if (mostRecentBuyTrade == null)
                 {
-                    decimal nextSellPrice = mostRecentBuyTrade.TradePrice + distance;
-                    await _messagingService.SendMessageAsync($"*Action Intent*: Placing SELL limit order for {shares} shares of {ticker} at ${nextSellPrice} based on previous buy trade.");
-                    await _brokerService.PlaceLimitOrderAsync(ticker, TradeDirection.SELL, nextSellPrice, shares);
+                    await _brokerService.PlaceLimitOrderAsync(targetTicker, TradeDirection.BUY, trade.TradePrice, shares, config.LogsOnly);
+                }
+                else
+                {
+                    if (mostRecentBuyTrade.TradePrice - distance > trade.TradePrice)
+                    {
+                        await _brokerService.PlaceLimitOrderAsync(targetTicker, TradeDirection.BUY, trade.TradePrice, shares, config.LogsOnly);
+                    }
+                    else
+                    {
+                        decimal nextSellPrice = mostRecentBuyTrade.TradePrice + distance;
+                        await _brokerService.PlaceLimitOrderAsync(targetTicker, TradeDirection.SELL, nextSellPrice, shares, config.LogsOnly);
+                    }
                 }
             }
             
@@ -244,6 +260,8 @@ namespace Finsight.Services
             if (dto.SharesPerTranche.HasValue) config.SharesPerTranche = dto.SharesPerTranche.Value;
             if (dto.DistancePerTranche.HasValue) config.DistancePerTranche = dto.DistancePerTranche.Value;
             if (dto.LogsOnly.HasValue) config.LogsOnly = dto.LogsOnly.Value;
+            if (dto.DefaultUserId != null) config.DefaultUserId = dto.DefaultUserId;
+            if (dto.Ticker != null) config.Ticker = dto.Ticker;
 
             await _dbContext.SaveChangesAsync();
             return config;

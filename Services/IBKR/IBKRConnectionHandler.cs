@@ -4,6 +4,8 @@ using IBApi;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore;
+using Finsight.Interfaces;
 
 namespace Finsight.Services.IBKR
 {
@@ -18,11 +20,13 @@ namespace Finsight.Services.IBKR
         
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly System.Collections.Concurrent.ConcurrentDictionary<int, (Contract Contract, Order Order)> _openOrders = new();
+        private readonly IMessagingService _messagingService;
 
-        public IBKRConnectionHandler(ILogger<IBKRConnectionHandler> logger, IServiceScopeFactory scopeFactory)
+        public IBKRConnectionHandler(ILogger<IBKRConnectionHandler> logger, IServiceScopeFactory scopeFactory, IMessagingService messagingService)
         {
             _logger = logger;
             _scopeFactory = scopeFactory;
+            _messagingService = messagingService;
             _signal = new EReaderMonitorSignal();
             _clientSocket = new EClientSocket(this, _signal);
         }
@@ -49,6 +53,7 @@ namespace Finsight.Services.IBKR
                     reader.processMsgs();
                 }
             }) { IsBackground = true }.Start();
+            _messagingService.SendMessageAsync($"*IBKR Connection Established*: Connected to IBKR at {host}:{port} with ClientId {clientId}").Wait();
         }
 
         public void Disconnect()
@@ -97,7 +102,24 @@ namespace Finsight.Services.IBKR
                         
                         await messagingService.SendMessageAsync($"*Order Executed (IBKR)*: {orderInfo.Order.Action} {filled} shares of {orderInfo.Contract.Symbol} at Avg Price ${avgFillPrice}");
                         
-                        await tradingService.HandleTradeExecutionAsync(orderInfo.Contract.Symbol, direction, (decimal)avgFillPrice, (decimal)filled);
+                        var config = await tradingService.GetTradingConfigAsync();
+                        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                        var defaultUserId = config?.DefaultUserId ?? (await dbContext.Users.FirstOrDefaultAsync())?.Id ?? "system";
+                        
+                        var trade = new Finsight.Models.FSTrade
+                        {
+                            Id = Guid.NewGuid(),
+                            FSUserId = defaultUserId,
+                            Ticker = orderInfo.Contract.Symbol,
+                            TradeDirection = direction,
+                            TradePrice = (decimal)avgFillPrice,
+                            Quantity = (decimal)filled,
+                            Date = DateTime.UtcNow,
+                            ExternalId = orderId.ToString(),
+                            Commission = 0
+                        };
+                        
+                        await tradingService.HandleTradeExecutionAsync(trade);
                     });
                     _openOrders.TryRemove(orderId, out _);
                 }

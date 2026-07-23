@@ -14,6 +14,6 @@ namespace Finsight.Interfaces
         Task<List<ClosedTradeResponse>> GetClosedTradesAsync(string userId, GetTradesQuery query);
         Task<FSTradingConfig?> GetTradingConfigAsync();
         Task<FSTradingConfig> UpdateTradingConfigAsync(UpdateTradingConfigDTO dto);
-        Task HandleTradeExecutionAsync(string ticker, Finsight.Enums.TradeDirection direction, decimal fillPrice, decimal quantity);
+        Task HandleTradeExecutionAsync(FSTrade trade);
     }
 }

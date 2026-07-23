@@ -10,8 +10,7 @@ namespace Finsight.Interfaces
         bool IsConnected { get; }
         void Connect();
         void Disconnect();
-        Task PlaceLimitOrderAsync(string ticker, TradeDirection direction, decimal limitPrice, decimal quantity);
-        Task CancelOrderAsync(string brokerOrderId);
+        Task PlaceLimitOrderAsync(string ticker, TradeDirection direction, decimal limitPrice, decimal quantity, bool logsOnly);
         Task CancelAllOrdersAsync();
     }
 }
