@@ -1,6 +1,8 @@
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 using Finsight.Enums;
+using Finsight.DTOs;
 
 namespace Finsight.Interfaces
 {
@@ -11,6 +13,8 @@ namespace Finsight.Interfaces
         void Connect();
         void Disconnect();
         Task PlaceLimitOrderAsync(string ticker, TradeDirection direction, decimal limitPrice, decimal quantity, bool logsOnly);
-        Task CancelAllOrdersAsync();
+        Task<List<ActiveOrderDTO>> GetActiveOrdersAsync();
+        Task AdjustOrderPriceAsync(int permId, decimal newPrice);
+        Task CancelAllOrdersAsync(bool logsOnly);
     }
 }

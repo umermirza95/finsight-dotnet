@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using IBApi;
 using Microsoft.Extensions.Configuration;
@@ -21,6 +23,10 @@ namespace Finsight.Services.IBKR
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly System.Collections.Concurrent.ConcurrentDictionary<int, (Contract Contract, Order Order)> _openOrders = new();
         private readonly IMessagingService _messagingService;
+        private TaskCompletionSource<bool>? _openOrdersTcs;
+        
+        private bool _isConnected;
+        public bool IsConnected => _isConnected && _clientSocket.IsConnected();
 
         public IBKRConnectionHandler(ILogger<IBKRConnectionHandler> logger, IServiceScopeFactory scopeFactory, IMessagingService messagingService)
         {
@@ -33,7 +39,7 @@ namespace Finsight.Services.IBKR
 
         public void Connect(string host, int port, int clientId)
         {
-            if (_clientSocket.IsConnected())
+            if (IsConnected)
             {
                 _logger.LogInformation("Already connected to IBKR.");
                 return;
@@ -63,6 +69,7 @@ namespace Finsight.Services.IBKR
                 _logger.LogInformation("Disconnecting from IBKR.");
                 _clientSocket.eDisconnect();
             }
+            _isConnected = false;
         }
 
         public int GetNextOrderId()
@@ -70,10 +77,33 @@ namespace Finsight.Services.IBKR
             return _nextOrderId++;
         }
 
+        public IEnumerable<(int OrderId, Contract Contract, Order Order)> GetOpenOrders()
+        {
+            return _openOrders.Select(kv => (kv.Key, kv.Value.Contract, kv.Value.Order));
+        }
+
+        public async Task<IEnumerable<(int OrderId, Contract Contract, Order Order)>> RefreshAndGetOpenOrdersAsync()
+        {
+            _openOrdersTcs = new TaskCompletionSource<bool>();
+            _openOrders.Clear();
+            
+            _clientSocket.reqAllOpenOrders();
+            
+            var fetchTask = _openOrdersTcs.Task;
+            if (await Task.WhenAny(fetchTask, Task.Delay(5000)) != fetchTask)
+            {
+                _logger.LogWarning("Timeout waiting for open orders from IBKR.");
+            }
+            
+            return GetOpenOrders();
+        }
+
         public override void nextValidId(int orderId)
         {
+            _isConnected = true;
             _nextOrderId = orderId;
             _logger.LogInformation($"Next valid order ID: {orderId}");
+            //_clientSocket.reqAutoOpenOrders(true); // Automatically bind manual/mobile orders to this client ID to receive their execution events
             _clientSocket.reqAllOpenOrders(); // Required to populate _openOrders so we know the Contract and Order Action
         }
 
@@ -86,11 +116,11 @@ namespace Finsight.Services.IBKR
 
         public override void orderStatus(int orderId, string status, double filled, double remaining, double avgFillPrice, int permId, int parentId, double lastFillPrice, int clientId, string whyHeld, double mktCapPrice)
         {
-            _logger.LogInformation($"OrderStatus: OrderId={orderId}, Status={status}, Filled={filled}, Remaining={remaining}");
+            _logger.LogInformation($"OrderStatus: OrderId={orderId}, PermId={permId}, Status={status}, Filled={filled}, Remaining={remaining}");
             
             if (status == "Filled" || remaining == 0)
             {
-                if (_openOrders.TryGetValue(orderId, out var orderInfo))
+                if (_openOrders.TryGetValue(permId, out var orderInfo))
                 {
                     Task.Run(async () => 
                     {
@@ -115,39 +145,56 @@ namespace Finsight.Services.IBKR
                             TradePrice = (decimal)avgFillPrice,
                             Quantity = (decimal)filled,
                             Date = DateTime.UtcNow,
-                            ExternalId = orderId.ToString(),
-                            Commission = 0
+                            ExternalId = permId.ToString(),
+                            Commission = 1
                         };
                         
                         await tradingService.HandleTradeExecutionAsync(trade);
                     });
-                    _openOrders.TryRemove(orderId, out _);
+                    _openOrders.TryRemove(permId, out _);
                 }
                 else
                 {
-                    _logger.LogWarning($"Order {orderId} was completely filled, but its details were not found in local cache.");
+                    _logger.LogWarning($"Order with PermId {permId} was completely filled, but its details were not found in local cache.");
                 }
             }
             else if (status == "Cancelled" || status == "Inactive")
             {
-                _openOrders.TryRemove(orderId, out _);
+                _openOrders.TryRemove(permId, out _);
             }
         }
 
         public override void openOrder(int orderId, Contract contract, Order order, OrderState orderState)
         {
-            _openOrders[orderId] = (contract, order);
-            _logger.LogInformation($"Open Order: {orderId} {order.Action} {order.TotalQuantity} {contract.Symbol} @ {order.LmtPrice}");
+            _openOrders[order.PermId] = (contract, order);
+            _logger.LogInformation($"Open Order: PermId={order.PermId} {order.Action} {order.TotalQuantity} {contract.Symbol} @ {order.LmtPrice}");
         }
 
         public override void openOrderEnd()
         {
             _logger.LogInformation("Finished receiving open orders.");
+            _openOrdersTcs?.TrySetResult(true);
         }
 
         public override void connectionClosed()
         {
+            _isConnected = false;
             _logger.LogWarning("IBKR Connection Closed.");
+        }
+
+        public override void error(int id, int errorCode, string errorMsg)
+        {
+            _logger.LogError($"IBKR Error [{errorCode}]: {errorMsg}");
+            // 504: Not connected, 1100: Connectivity between IB and TWS has been lost, 2110: Connectivity between IB and TWS has been lost
+            if (errorCode == 504 || errorCode == 1100 || errorCode == 2110)
+            {
+                _isConnected = false;
+            }
+            // 1101, 1102: Connectivity restored
+            else if (errorCode == 1101 || errorCode == 1102)
+            {
+                _isConnected = true;
+            }
         }
     }
 }

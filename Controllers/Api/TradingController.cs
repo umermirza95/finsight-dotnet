@@ -88,29 +88,7 @@ namespace Finsight.Controller
             }
         }
 
-        [HttpGet("ibkr-test")]
 
-        public async Task<IActionResult> Test()
-
-        {
-
-            try
-            {
-                using var client = new HttpClient();
-
-                var response = await client.GetAsync("https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService.SendRequest?t=490702090196276288481712&q=1519436&v=3");
-
-                return Ok(response.StatusCode);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex);
-                Console.WriteLine(ex.InnerException);
-                Console.WriteLine(ex.InnerException?.InnerException);
-                return StatusCode(500, new { error = ex.Message });
-            }
-
-        }
         [HttpGet("config")]
         public async Task<IActionResult> GetConfigAsync([FromServices] IBrokerService brokerService)
         {
@@ -126,7 +104,7 @@ namespace Finsight.Controller
         }
 
         [HttpPut("config")]
-        public async Task<IActionResult> UpdateConfigAsync([FromBody] DTOs.UpdateTradingConfigDTO dto, [FromServices] IBrokerService brokerService)
+        public async Task<IActionResult> UpdateConfigAsync([FromBody] Commands.UpdateTradingConfigCommand dto, [FromServices] IBrokerService brokerService)
         {
             try
             {
@@ -148,6 +126,78 @@ namespace Finsight.Controller
                 }
 
                 return Ok(config);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpGet("active-orders")]
+        public async Task<IActionResult> GetActiveOrdersAsync([FromServices] IBrokerService brokerService)
+        {
+            try
+            {
+                var orders = await brokerService.GetActiveOrdersAsync();
+                return Ok(orders);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpPost("active-orders/place-order")]
+        public async Task<IActionResult> PlaceOrderAsync([FromBody] Commands.PlaceOrderCommand request, [FromServices] IBrokerService brokerService)
+        {
+            try
+            {
+                var direction = request.Direction.Equals("BUY", StringComparison.OrdinalIgnoreCase) 
+                                ? Finsight.Enums.TradeDirection.BUY : Finsight.Enums.TradeDirection.SELL;
+                                
+                await brokerService.PlaceLimitOrderAsync(request.Ticker, direction, request.LimitPrice, request.Quantity, logsOnly: false);
+                
+                var orders = await brokerService.GetActiveOrdersAsync();
+                return Ok(new { message = "Order placed successfully.", orders = orders });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpPost("active-orders/adjust-price")]
+        public async Task<IActionResult> AdjustOrderPriceAsync([FromBody] Commands.AdjustOrderPriceCommand request, [FromServices] IBrokerService brokerService)
+        {
+            try
+            {
+                await brokerService.AdjustOrderPriceAsync(request.PermId, request.NewPrice);
+                return Ok(new { message = "Order price adjusted successfully." });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpPost("manual-match")]
+        public async Task<IActionResult> ManualMatchAsync([FromBody] Commands.ManualMatchCommand command)
+        {
+            try
+            {
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+                await _tradingService.ManualMatchTradesAsync(userId, command);
+                return Ok(new { message = "Trades matched successfully." });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { error = ex.Message });
             }
             catch (Exception ex)
             {

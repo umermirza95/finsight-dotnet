@@ -1,8 +1,8 @@
 using System;
 
-namespace Finsight.DTOs
+namespace Finsight.Commands
 {
-    public class UpdateTradingConfigDTO
+    public class UpdateTradingConfigCommand
     {
         public decimal? TradingCapital { get; set; }
         public decimal? TrancheSize { get; set; }

@@ -11,6 +11,7 @@ using IBApi;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Finsight.DTOs;
 
 namespace Finsight.Services
 {
@@ -82,20 +83,62 @@ namespace Finsight.Services
             _logger.LogInformation($"Placed limit order {orderId} for {ticker} {direction} {quantity} @ {limitPrice}");
         }
 
-        public async Task CancelAllOrdersAsync()
+        public async Task CancelAllOrdersAsync(bool logsOnly)
         {
+            await _messagingService.SendMessageAsync("*Action Intent*: Canceling all open orders.");
+            if(logsOnly)
+                return;
+
             if (!_connectionHandler.Client.IsConnected())
                 throw new Exception("IBKR is not connected.");
 
-            var config = await _dbContext.TradingConfigs.FirstOrDefaultAsync();
-            if (config != null && config.LogsOnly)
-            {
-
-                return;
-            }
 
             _connectionHandler.Client.reqGlobalCancel();
             _logger.LogInformation("Requested global cancel of all open orders.");
+        }
+
+        public async Task<List<ActiveOrderDTO>> GetActiveOrdersAsync()
+        {
+            if (!IsConnected)
+                return new List<ActiveOrderDTO>();
+
+            // Trigger a refresh and wait for IBKR to send all open orders
+            var rawOrders = await _connectionHandler.RefreshAndGetOpenOrdersAsync();
+
+            var openOrders = rawOrders.Select(o => new ActiveOrderDTO
+            {
+                OrderId = o.OrderId,
+                Ticker = o.Contract.Symbol,
+                Action = o.Order.Action,
+                Quantity = (decimal)o.Order.TotalQuantity,
+                LimitPrice = (decimal)o.Order.LmtPrice
+            }).ToList();
+
+            return openOrders;
+        }
+
+        public async Task AdjustOrderPriceAsync(int permId, decimal newPrice)
+        {
+            if (!IsConnected)
+                throw new Exception("IBKR is not connected.");
+
+            var openOrders = _connectionHandler.GetOpenOrders();
+            var targetOrder = openOrders.FirstOrDefault(o => o.OrderId == permId); // Note: Tuple's OrderId field contains the PermId because of GetOpenOrders() mapping
+
+            if (targetOrder.Order == null)
+            {
+                throw new Exception($"Active order with PermId {permId} not found.");
+            }
+
+            if (targetOrder.Order.OrderId == 0)
+            {
+                throw new InvalidOperationException("Cannot adjust price of orders placed manually or externally. Only API-originated orders can be modified without binding.");
+            }
+
+            targetOrder.Order.LmtPrice = (double)newPrice;
+            _connectionHandler.Client.placeOrder(targetOrder.Order.OrderId, targetOrder.Contract, targetOrder.Order);
+            
+           
         }
 
         public async Task FetchMonthlyTradesAsync(string userId)

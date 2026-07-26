@@ -67,11 +67,6 @@ namespace Finsight.Services
                             // Profit (or break-even): keep LIFO match
                             matchedBuy = lifoBuy;
                         }
-                        else
-                        {
-                            // Loss: switch to FIFO (oldest buy order)
-                            matchedBuy = buys.LastOrDefault(b => b.Date <= sell.Date);
-                        }
                     }
 
                     if (matchedBuy != null)
@@ -193,7 +188,7 @@ namespace Finsight.Services
             decimal shares = config.SharesPerTranche;
             decimal distance = config.DistancePerTranche;
 
-            await _brokerService.CancelAllOrdersAsync();
+            await _brokerService.CancelAllOrdersAsync(config.LogsOnly);
 
             var targetTicker = !string.IsNullOrWhiteSpace(config.Ticker) ? config.Ticker : trade.Ticker;
 
@@ -241,7 +236,7 @@ namespace Finsight.Services
             return await _dbContext.TradingConfigs.FirstOrDefaultAsync();
         }
 
-        public async Task<FSTradingConfig> UpdateTradingConfigAsync(UpdateTradingConfigDTO dto)
+        public async Task<FSTradingConfig> UpdateTradingConfigAsync(Finsight.Commands.UpdateTradingConfigCommand dto)
         {
             var config = await _dbContext.TradingConfigs.FirstOrDefaultAsync();
             
@@ -265,6 +260,48 @@ namespace Finsight.Services
 
             await _dbContext.SaveChangesAsync();
             return config;
+        }
+
+        public async Task ManualMatchTradesAsync(string userId, Finsight.Commands.ManualMatchCommand command)
+        {
+            var buyTrade = await _dbContext.FSTrades.FirstOrDefaultAsync(t => t.ExternalId == command.BuyOrderId && t.FSUserId == userId);
+            var sellTrade = await _dbContext.FSTrades.FirstOrDefaultAsync(t => t.ExternalId == command.SellOrderId && t.FSUserId == userId);
+
+            if (buyTrade == null || sellTrade == null)
+            {
+                throw new InvalidOperationException("One or both trades not found.");
+            }
+
+            if (buyTrade.TradeDirection != TradeDirection.BUY || sellTrade.TradeDirection != TradeDirection.SELL)
+            {
+                throw new InvalidOperationException("Invalid trade directions. Must match a BUY and a SELL.");
+            }
+
+            if (buyTrade.Ticker != sellTrade.Ticker)
+            {
+                throw new InvalidOperationException("Trades must be of the same ticker.");
+            }
+
+            var alreadyMatched = await _dbContext.FSClosedTrades.AnyAsync(c => 
+                (c.OrderOpenId == command.BuyOrderId || c.OrderCloseId == command.BuyOrderId) || 
+                (c.OrderOpenId == command.SellOrderId || c.OrderCloseId == command.SellOrderId));
+
+            if (alreadyMatched)
+            {
+                throw new InvalidOperationException("One or both trades are already matched.");
+            }
+
+            var closedTrade = new FSClosedTrade
+            {
+                Id = Guid.NewGuid(),
+                FSUserId = userId,
+                OrderOpenId = command.BuyOrderId,
+                OrderCloseId = command.SellOrderId
+            };
+
+            _dbContext.FSClosedTrades.Add(closedTrade);
+            await _dbContext.SaveChangesAsync();
+            _logger.LogInformation($"Manually matched trade {command.BuyOrderId} with {command.SellOrderId} for user {userId}.");
         }
     }
 }
