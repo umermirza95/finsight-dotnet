@@ -204,5 +204,37 @@ namespace Finsight.Controller
                 return StatusCode(500, new { error = ex.Message });
             }
         }
+
+        [HttpDelete("active-orders/{orderId}")]
+        public async Task<IActionResult> CancelOrderAsync(int orderId, [FromServices] IBrokerService brokerService)
+        {
+            try
+            {
+                await brokerService.CancelOrderAsync(orderId);
+                return Ok(new { message = "Order cancelled successfully." });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpDelete("active-orders")]
+        public async Task<IActionResult> CancelAllOrdersAsync([FromServices] IBrokerService brokerService)
+        {
+            try
+            {
+                await brokerService.CancelAllOrdersAsync(false);
+                return Ok(new { message = "All orders cancelled successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
     }
 }

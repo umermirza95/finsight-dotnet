@@ -137,8 +137,28 @@ namespace Finsight.Services
 
             targetOrder.Order.LmtPrice = (double)newPrice;
             _connectionHandler.Client.placeOrder(targetOrder.Order.OrderId, targetOrder.Contract, targetOrder.Order);
-            
-           
+        }
+
+        public async Task CancelOrderAsync(int permId)
+        {
+            if (!IsConnected)
+                throw new Exception("IBKR is not connected.");
+
+            var openOrders = _connectionHandler.GetOpenOrders();
+            var targetOrder = openOrders.FirstOrDefault(o => o.OrderId == permId);
+
+            if (targetOrder.Order == null)
+            {
+                throw new Exception($"Active order with PermId {permId} not found.");
+            }
+
+            if (targetOrder.Order.OrderId == 0)
+            {
+                throw new InvalidOperationException("Cannot cancel orders placed manually or externally. Only API-originated orders can be cancelled without binding.");
+            }
+
+            _connectionHandler.Client.cancelOrder(targetOrder.Order.OrderId);
+            _logger.LogInformation($"Requested cancel of order {permId}");
         }
 
         public async Task FetchMonthlyTradesAsync(string userId)

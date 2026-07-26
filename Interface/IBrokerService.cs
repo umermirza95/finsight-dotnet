@@ -15,6 +15,7 @@ namespace Finsight.Interfaces
         Task PlaceLimitOrderAsync(string ticker, TradeDirection direction, decimal limitPrice, decimal quantity, bool logsOnly);
         Task<List<ActiveOrderDTO>> GetActiveOrdersAsync();
         Task AdjustOrderPriceAsync(int permId, decimal newPrice);
+        Task CancelOrderAsync(int permId);
         Task CancelAllOrdersAsync(bool logsOnly);
     }
 }
