@@ -6,5 +6,6 @@ namespace Finsight.Commands
         public required string Direction { get; set; }
         public decimal Quantity { get; set; }
         public decimal LimitPrice { get; set; }
+        public string? Account { get; set; }
     }
 }

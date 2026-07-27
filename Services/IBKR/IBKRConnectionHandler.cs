@@ -22,6 +22,7 @@ namespace Finsight.Services.IBKR
         
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly System.Collections.Concurrent.ConcurrentDictionary<int, (Contract Contract, Order Order)> _openOrders = new();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<int, TaskCompletionSource<bool>> _pendingOrders = new();
         private readonly IMessagingService _messagingService;
         private TaskCompletionSource<bool>? _openOrdersTcs;
         
@@ -82,6 +83,23 @@ namespace Finsight.Services.IBKR
             return _openOrders.Select(kv => (kv.Key, kv.Value.Contract, kv.Value.Order));
         }
 
+        public Task WaitForOrderPlacementAsync(int orderId, TimeSpan timeout)
+        {
+            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _pendingOrders[orderId] = tcs;
+
+            var cts = new CancellationTokenSource(timeout);
+            cts.Token.Register(() => 
+            {
+                if (_pendingOrders.TryRemove(orderId, out var pendingTcs))
+                {
+                    pendingTcs.TrySetException(new TimeoutException("Order placement timed out waiting for IBKR confirmation."));
+                }
+            });
+
+            return tcs.Task;
+        }
+
         public async Task<IEnumerable<(int OrderId, Contract Contract, Order Order)>> RefreshAndGetOpenOrdersAsync()
         {
             _openOrdersTcs = new TaskCompletionSource<bool>();
@@ -116,6 +134,11 @@ namespace Finsight.Services.IBKR
 
         public override void orderStatus(int orderId, string status, double filled, double remaining, double avgFillPrice, int permId, int parentId, double lastFillPrice, int clientId, string whyHeld, double mktCapPrice)
         {
+            if (_pendingOrders.TryRemove(orderId, out var tcs))
+            {
+                tcs.TrySetResult(true);
+            }
+
             _logger.LogInformation($"OrderStatus: OrderId={orderId}, PermId={permId}, Status={status}, Filled={filled}, Remaining={remaining}");
             
             if (status == "Filled" || remaining == 0)
@@ -168,6 +191,11 @@ namespace Finsight.Services.IBKR
         {
             _openOrders[order.PermId] = (contract, order);
             _logger.LogInformation($"Open Order: PermId={order.PermId} {order.Action} {order.TotalQuantity} {contract.Symbol} @ {order.LmtPrice}");
+            
+            if (_pendingOrders.TryRemove(orderId, out var tcs))
+            {
+                tcs.TrySetResult(true);
+            }
         }
 
         public override void openOrderEnd()
@@ -185,6 +213,12 @@ namespace Finsight.Services.IBKR
         public override void error(int id, int errorCode, string errorMsg)
         {
             _logger.LogError($"IBKR Error [{errorCode}]: {errorMsg}");
+            
+            if (id != -1 && _pendingOrders.TryRemove(id, out var tcs))
+            {
+                tcs.TrySetException(new Exception($"IBKR Error [{errorCode}]: {errorMsg}"));
+            }
+            
             // 504: Not connected, 1100: Connectivity between IB and TWS has been lost, 2110: Connectivity between IB and TWS has been lost
             if (errorCode == 504 || errorCode == 1100 || errorCode == 2110)
             {

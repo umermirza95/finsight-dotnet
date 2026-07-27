@@ -155,7 +155,7 @@ namespace Finsight.Controller
                 var direction = request.Direction.Equals("BUY", StringComparison.OrdinalIgnoreCase) 
                                 ? Finsight.Enums.TradeDirection.BUY : Finsight.Enums.TradeDirection.SELL;
                                 
-                await brokerService.PlaceLimitOrderAsync(request.Ticker, direction, request.LimitPrice, request.Quantity, logsOnly: false);
+                await brokerService.PlaceLimitOrderAsync(request.Ticker, direction, request.LimitPrice, request.Quantity, false, request.Account);
                 
                 var orders = await brokerService.GetActiveOrdersAsync();
                 return Ok(new { message = "Order placed successfully.", orders = orders });

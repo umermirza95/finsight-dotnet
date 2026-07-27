@@ -49,7 +49,7 @@ namespace Finsight.Services
             _connectionHandler.Disconnect();
         }
 
-        public async Task PlaceLimitOrderAsync(string ticker, TradeDirection direction, decimal limitPrice, decimal quantity, bool logsOnly)
+        public async Task PlaceLimitOrderAsync(string ticker, TradeDirection direction, decimal limitPrice, decimal quantity, bool logsOnly, string? account = null)
         {
             if (!_connectionHandler.Client.IsConnected())
                 throw new Exception("IBKR is not connected.");
@@ -77,8 +77,18 @@ namespace Finsight.Services
                 OutsideRth = true
             };
 
+            // Hardcoded default account as requested
+            order.Account = !string.IsNullOrEmpty(account) ? account : "U7630023";
+
             var orderId = _connectionHandler.GetNextOrderId();
+            
+            // Set up the wait task before sending the order to avoid race conditions
+            var waitTask = _connectionHandler.WaitForOrderPlacementAsync(orderId, TimeSpan.FromSeconds(10));
+            
             _connectionHandler.Client.placeOrder(orderId, contract, order);
+
+            // Wait for confirmation or error from IBKR
+            await waitTask;
 
             _logger.LogInformation($"Placed limit order {orderId} for {ticker} {direction} {quantity} @ {limitPrice}");
         }
@@ -136,7 +146,12 @@ namespace Finsight.Services
             }
 
             targetOrder.Order.LmtPrice = (double)newPrice;
+            
+            var waitTask = _connectionHandler.WaitForOrderPlacementAsync(targetOrder.Order.OrderId, TimeSpan.FromSeconds(10));
             _connectionHandler.Client.placeOrder(targetOrder.Order.OrderId, targetOrder.Contract, targetOrder.Order);
+            
+            // Wait for confirmation or error from IBKR
+            await waitTask;
         }
 
         public async Task CancelOrderAsync(int permId)
@@ -157,7 +172,12 @@ namespace Finsight.Services
                 throw new InvalidOperationException("Cannot cancel orders placed manually or externally. Only API-originated orders can be cancelled without binding.");
             }
 
+            var waitTask = _connectionHandler.WaitForOrderPlacementAsync(targetOrder.Order.OrderId, TimeSpan.FromSeconds(10));
             _connectionHandler.Client.cancelOrder(targetOrder.Order.OrderId);
+            
+            // Wait for confirmation or error from IBKR
+            await waitTask;
+            
             _logger.LogInformation($"Requested cancel of order {permId}");
         }
 
