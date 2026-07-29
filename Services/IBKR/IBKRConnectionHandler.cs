@@ -168,7 +168,7 @@ namespace Finsight.Services.IBKR
                             TradePrice = (decimal)avgFillPrice,
                             Quantity = (decimal)filled,
                             Date = DateTime.UtcNow,
-                            ExternalId = permId.ToString(),
+                            ExternalId = orderId.ToString(),
                             Commission = 1
                         };
                         
