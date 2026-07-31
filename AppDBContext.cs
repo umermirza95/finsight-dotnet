@@ -21,6 +21,7 @@ public class AppDbContext : IdentityDbContext<FSUser>
     public DbSet<FSClosedTrade> FSClosedTrades { get; set; }
     public DbSet<FSTradingConfig> TradingConfigs { get; set; }
     public DbSet<FSProfitDistribution> FSProfitDistributions { get; set; }
+    public DbSet<FSInsurancePayout> FSInsurancePayouts { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -213,6 +214,19 @@ public class AppDbContext : IdentityDbContext<FSUser>
                   .WithMany()
                   .HasPrincipalKey(t => t.ExternalId)
                   .HasForeignKey(ct => ct.OrderCloseId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(ct => ct.InsurancePayout)
+                  .WithOne(ip => ip.ClosedTrade)
+                  .HasForeignKey<FSInsurancePayout>(ip => ip.FSClosedTradeId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<FSInsurancePayout>(entity =>
+        {
+            entity.HasOne(ip => ip.User)
+                  .WithMany()
+                  .HasForeignKey(ip => ip.FSUserId)
                   .OnDelete(DeleteBehavior.Restrict);
         });
 

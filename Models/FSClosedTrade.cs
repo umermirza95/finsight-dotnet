@@ -23,5 +23,7 @@ namespace Finsight.Models
 
         [Column(TypeName = "decimal(18,2)")]
         public decimal NetProfit { get; set; }
+
+        public FSInsurancePayout? InsurancePayout { get; set; }
     }
 }

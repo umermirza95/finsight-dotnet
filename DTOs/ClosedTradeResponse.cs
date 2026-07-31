@@ -15,5 +15,6 @@ namespace Finsight.DTOs
         public decimal SellPrice { get; set; }
         public decimal Commission { get; set; }
         public decimal NetProfit { get; set; }
+        public decimal InsuranceCoveredLoss { get; set; }
     }
 }

@@ -125,6 +125,7 @@ namespace Finsight.Services
             var query = _dbContext.FSClosedTrades
                 .Include(c => c.OpenTrade)
                 .Include(c => c.CloseTrade)
+                .Include(c => c.InsurancePayout)
                 .Where(c => c.FSUserId == userId);
 
             if (!string.IsNullOrEmpty(queryParams.Ticker))
@@ -164,7 +165,8 @@ namespace Finsight.Services
                     BuyPrice = buyPrice,
                     SellPrice = sellPrice,
                     Commission = totalComm,
-                    NetProfit = ((sellPrice - buyPrice) * quantity) - totalComm
+                    NetProfit = c.NetProfit, // Use the DB's NetProfit which includes any insurance payouts
+                    InsuranceCoveredLoss = c.InsurancePayout?.CoveredAmount ?? 0
                 };
             }).ToList();
         }
@@ -300,6 +302,37 @@ namespace Finsight.Services
                 OrderCloseId = command.SellOrderId,
                 NetProfit = ((sellTrade.TradePrice - buyTrade.TradePrice) * buyTrade.Quantity) - (buyTrade.Commission + sellTrade.Commission)
             };
+
+            if (closedTrade.NetProfit < 0)
+            {
+                var totalInsuranceFund = await _dbContext.FSProfitDistributions
+                    .Where(d => d.FSUserId == userId && d.DistributionType == ProfitDistributionType.Insurance)
+                    .SumAsync(d => d.Amount);
+
+                var totalPayouts = await _dbContext.FSInsurancePayouts
+                    .Where(p => p.FSUserId == userId)
+                    .SumAsync(p => p.CoveredAmount);
+
+                var availableInsurance = totalInsuranceFund - totalPayouts;
+
+                if (availableInsurance > 0)
+                {
+                    var lossAmount = Math.Abs(closedTrade.NetProfit);
+                    var coveredAmount = Math.Min(availableInsurance, lossAmount);
+
+                    var payout = new FSInsurancePayout
+                    {
+                        Id = Guid.NewGuid(),
+                        FSClosedTradeId = closedTrade.Id,
+                        FSUserId = userId,
+                        CoveredAmount = coveredAmount,
+                        CreatedAt = DateTime.UtcNow
+                    };
+
+                    _dbContext.FSInsurancePayouts.Add(payout);
+                    closedTrade.NetProfit += coveredAmount; // Adjust net profit
+                }
+            }
 
             _dbContext.FSClosedTrades.Add(closedTrade);
             await _dbContext.SaveChangesAsync();

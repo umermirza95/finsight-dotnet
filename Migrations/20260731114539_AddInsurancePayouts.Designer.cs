@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace finsight_dotnet.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260731114539_AddInsurancePayouts")]
+    partial class AddInsurancePayouts
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -240,16 +243,10 @@ namespace finsight_dotnet.Migrations
                     b.Property<Guid>("FSClosedTradeId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("FSUserId")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.HasKey("Id");
 
                     b.HasIndex("FSClosedTradeId")
                         .IsUnique();
-
-                    b.HasIndex("FSUserId");
 
                     b.ToTable("FSInsurancePayouts");
                 });
@@ -872,15 +869,7 @@ namespace finsight_dotnet.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Finsight.Models.FSUser", "User")
-                        .WithMany()
-                        .HasForeignKey("FSUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.Navigation("ClosedTrade");
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Finsight.Models.FSProfitDistribution", b =>
