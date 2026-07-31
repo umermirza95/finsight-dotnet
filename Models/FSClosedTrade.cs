@@ -20,5 +20,8 @@ namespace Finsight.Models
         public required string OrderCloseId { get; set; }
         [ForeignKey(nameof(OrderCloseId))]
         public FSTrade? CloseTrade { get; set; }
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal NetProfit { get; set; }
     }
 }

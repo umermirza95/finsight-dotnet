@@ -76,7 +76,8 @@ namespace Finsight.Services
                             Id = Guid.NewGuid(),
                             FSUserId = userId,
                             OrderOpenId = matchedBuy.ExternalId,
-                            OrderCloseId = sell.ExternalId
+                            OrderCloseId = sell.ExternalId,
+                            NetProfit = ((sell.TradePrice - matchedBuy.TradePrice) * matchedBuy.Quantity) - (matchedBuy.Commission + sell.Commission)
                         });
 
                         // Remove matched buy so it's not matched again
@@ -296,12 +297,50 @@ namespace Finsight.Services
                 Id = Guid.NewGuid(),
                 FSUserId = userId,
                 OrderOpenId = command.BuyOrderId,
-                OrderCloseId = command.SellOrderId
+                OrderCloseId = command.SellOrderId,
+                NetProfit = ((sellTrade.TradePrice - buyTrade.TradePrice) * buyTrade.Quantity) - (buyTrade.Commission + sellTrade.Commission)
             };
 
             _dbContext.FSClosedTrades.Add(closedTrade);
             await _dbContext.SaveChangesAsync();
             _logger.LogInformation($"Manually matched trade {command.BuyOrderId} with {command.SellOrderId} for user {userId}.");
+        }
+
+        public async Task MakeProfitDistributionAsync(string userId, Finsight.Commands.MakeProfitDistributionCommand command)
+        {
+            var availableBalance = await GetAvailableBalanceAsync(userId);
+
+            if (command.Amount > availableBalance)
+            {
+                throw new InvalidOperationException("Insufficient total profit to distribute this amount.");
+            }
+
+            var distribution = new FSProfitDistribution
+            {
+                Id = Guid.NewGuid(),
+                FSUserId = userId,
+                Amount = command.Amount,
+                DistributionType = command.Type,
+                Date = DateTime.UtcNow
+            };
+
+            _dbContext.FSProfitDistributions.Add(distribution);
+            await _dbContext.SaveChangesAsync();
+            _logger.LogInformation($"Recorded profit distribution of {command.Amount} for user {userId}.");
+        }
+
+        public async Task<decimal> GetAvailableBalanceAsync(string userId)
+        {
+            
+            var totalNetProfit = await _dbContext.FSClosedTrades
+                .Where(c => c.FSUserId == userId)
+                .SumAsync(c => c.NetProfit);
+
+            var totalDistributed = await _dbContext.FSProfitDistributions
+                .Where(d => d.FSUserId == userId)
+                .SumAsync(d => d.Amount);
+
+            return totalNetProfit - totalDistributed;
         }
     }
 }

@@ -236,5 +236,43 @@ namespace Finsight.Controller
                 return StatusCode(500, new { error = ex.Message });
             }
         }
+
+        [HttpPost("profit-distribution")]
+        public async Task<IActionResult> MakeProfitDistributionAsync([FromBody] Commands.MakeProfitDistributionCommand command)
+        {
+            try
+            {
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+                await _tradingService.MakeProfitDistributionAsync(userId, command);
+                return Ok(new { message = "Profit distribution recorded successfully." });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpGet("available-balance")]
+        public async Task<IActionResult> GetAvailableBalanceAsync()
+        {
+            try
+            {
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+                var balance = await _tradingService.GetAvailableBalanceAsync(userId);
+                return Ok(new { availableBalance = balance });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
     }
 }

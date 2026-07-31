@@ -16,5 +16,7 @@ namespace Finsight.Interfaces
         Task<FSTradingConfig> UpdateTradingConfigAsync(Finsight.Commands.UpdateTradingConfigCommand dto);
         Task HandleTradeExecutionAsync(FSTrade trade);
         Task ManualMatchTradesAsync(string userId, Finsight.Commands.ManualMatchCommand command);
+        Task MakeProfitDistributionAsync(string userId, Finsight.Commands.MakeProfitDistributionCommand command);
+        Task<decimal> GetAvailableBalanceAsync(string userId);
     }
 }

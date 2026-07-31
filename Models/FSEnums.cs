@@ -33,4 +33,10 @@ namespace Finsight.Enums
         BUY,
         SELL
     }
+
+    public enum ProfitDistributionType
+    {
+        Insurance,
+        Withdrawal
+    }
 }

@@ -20,6 +20,7 @@ public class AppDbContext : IdentityDbContext<FSUser>
     public DbSet<FSTrade> FSTrades { get; set; }
     public DbSet<FSClosedTrade> FSClosedTrades { get; set; }
     public DbSet<FSTradingConfig> TradingConfigs { get; set; }
+    public DbSet<FSProfitDistribution> FSProfitDistributions { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -215,6 +216,14 @@ public class AppDbContext : IdentityDbContext<FSUser>
                   .OnDelete(DeleteBehavior.Restrict);
         });
 
+        modelBuilder.Entity<FSProfitDistribution>(entity =>
+        {
+            entity.Property(d => d.DistributionType).HasConversion<string>();
+            entity.HasOne(d => d.User)
+                  .WithMany()
+                  .HasForeignKey(d => d.FSUserId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
 
     }
 }
