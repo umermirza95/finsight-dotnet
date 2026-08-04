@@ -39,5 +39,7 @@ namespace Finsight.Commands
         public FSTransactionMode Mode { get; set; }
 
         public List<IBrowserFile> Attachments { get; set; } = [];
+
+        public List<string> FSImportedTransactionIds { get; set; } = [];
     }
 }

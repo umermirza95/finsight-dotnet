@@ -35,9 +35,24 @@ namespace Finsight.Controller
         {
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
             var transaction = await _transactionService.AddTransactionWithFXAsync(command, userIdString);
+            var dto = new FSTransactionDTO
+            {
+                Id = transaction.Id,
+                BaseAmount = transaction.Amount,
+                Amount = transaction.Amount, // We don't have FX rate here, but we can just map BaseAmount
+                CategoryId = transaction.FSCategoryId,
+                Mode = transaction.Mode,
+                Date = transaction.Date,
+                Currency = transaction.FSCurrencyCode,
+                Type = transaction.Type,
+                SubCategoryId = transaction.FSSubCategoryId,
+                Comment = transaction.Comment,
+                SubType = transaction.SubType
+            };
+            
             return Ok(new
             {
-                data = transaction
+                data = dto
             });
         }
 
@@ -49,9 +64,24 @@ namespace Finsight.Controller
             try
             {
                 var transaction = await _transactionService.EditTransactionAsync(id, command, userIdString);
+                var dto = new FSTransactionDTO
+                {
+                    Id = transaction.Id,
+                    BaseAmount = transaction.Amount,
+                    Amount = transaction.Amount,
+                    CategoryId = transaction.FSCategoryId,
+                    Mode = transaction.Mode,
+                    Date = transaction.Date,
+                    Currency = transaction.FSCurrencyCode,
+                    Type = transaction.Type,
+                    SubCategoryId = transaction.FSSubCategoryId,
+                    Comment = transaction.Comment,
+                    SubType = transaction.SubType
+                };
+
                 return Ok(new
                 {
-                    data = transaction
+                    data = dto
                 });
             }
             catch (Exception e)

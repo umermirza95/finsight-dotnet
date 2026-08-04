@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace finsight_dotnet.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260803142943_NEW_CHANGE")]
+    partial class NEW_CHANGE
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -261,6 +264,9 @@ namespace finsight_dotnet.Migrations
                         .HasColumnType("text");
 
                     b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsProcessed")
                         .HasColumnType("boolean");
 
                     b.Property<string>("Type")
@@ -919,8 +925,7 @@ namespace finsight_dotnet.Migrations
                 {
                     b.HasOne("Finsight.Models.FSTransaction", "FSTransaction")
                         .WithMany("FSImportedTransactions")
-                        .HasForeignKey("FSTransactionId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .HasForeignKey("FSTransactionId");
 
                     b.HasOne("Finsight.Models.FSUser", null)
                         .WithMany()

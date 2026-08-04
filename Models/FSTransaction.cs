@@ -40,6 +40,7 @@ namespace Finsight.Models
 
         public ICollection<FSFile> Files { get; set; } = [];
 
+        public ICollection<FSImportedTransaction> FSImportedTransactions { get; set; } = [];
 
     }
 }

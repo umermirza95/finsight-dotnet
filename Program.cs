@@ -61,7 +61,7 @@ builder.Services.AddSingleton(sp =>
 builder.Services.AddScoped(sp => 
 {
     var googleAi = sp.GetRequiredService<GoogleAI>();
-    return googleAi.GenerativeModel(Model.Gemini25Flash); 
+    return googleAi.GenerativeModel(Model.Gemini20FlashLite); 
 });
 builder.Services.AddScoped<ILLMService, FSGeminiService>();
 
@@ -98,6 +98,7 @@ builder.Services.AddControllers()
 var app = builder.Build();
 var logger = app.Services.GetRequiredService<ILogger<Program>>();
 logger.LogInformation("Finsight App Started on VPS. Logs are being shipped to Loki.");
+logger.LogWarning("ACTUAL GEMINI MODEL STRING IS: {model}", Model.Gemini25Flash);
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())

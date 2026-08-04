@@ -136,6 +136,33 @@ namespace Finsight.Services
                 UpdatedAt = DateTime.UtcNow,
                 Files = fsFiles
             };
+
+            if (command.FSImportedTransactionIds != null && command.FSImportedTransactionIds.Any())
+            {
+                var importedTransactions = await _context.FSImportedTransactions
+                    .Where(t => command.FSImportedTransactionIds.Contains(t.Id) && t.FSUserId == userId)
+                    .ToListAsync();
+
+                if (importedTransactions.Count != command.FSImportedTransactionIds.Count)
+                {
+                    throw new Exception("One or more imported transactions could not be found or do not belong to the user.");
+                }
+
+                foreach (var imported in importedTransactions)
+                {
+                    if (imported.Type != command.Type)
+                    {
+                        throw new Exception($"Imported transaction {imported.Id} has a different type than the batched transaction.");
+                    }
+                    if (imported.FSCurrencyCode != command.Currency)
+                    {
+                        throw new Exception($"Imported transaction {imported.Id} has a different currency than the batched transaction.");
+                    }
+
+                    imported.FSTransactionId = transactionId;
+                }
+            }
+
             await exchangeRateService.AddMissingFXRatesForTransactionAsync(transaction, user);
             _context.Transactions.Add(transaction);
             await _context.SaveChangesAsync();

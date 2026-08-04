@@ -18,15 +18,16 @@ namespace Finsight.Services
         private readonly ILogger<FSTradingService> _logger;
         private readonly IMarketDataService _marketDataService;
         private readonly IBrokerService _brokerService;
+        private readonly ITransactionService _transactionService;
       
 
-        public FSTradingService(AppDbContext dbContext, ILogger<FSTradingService> logger, IMarketDataService marketDataService, IBrokerService brokerService)
+        public FSTradingService(AppDbContext dbContext, ILogger<FSTradingService> logger, IMarketDataService marketDataService, IBrokerService brokerService, ITransactionService transactionService)
         {
             _dbContext = dbContext;
             _logger = logger;
             _marketDataService = marketDataService;
             _brokerService = brokerService;
-          
+            _transactionService = transactionService;
         }
 
         public async Task FetchMonthlyTradesAsync(string userId)
@@ -359,6 +360,31 @@ namespace Finsight.Services
 
             _dbContext.FSProfitDistributions.Add(distribution);
             await _dbContext.SaveChangesAsync();
+
+            if (command.Type == ProfitDistributionType.Withdrawal)
+            {
+                var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId);
+                var category = await _dbContext.Categories
+                    .FirstOrDefaultAsync(c => c.FSUserId == userId && c.Name.ToLower() == "business" && c.Type == FSTransactionType.income);
+
+
+               if (category != null)
+               {
+                 var transactionCommand = new Finsight.Commands.CreateTransactionCommand
+                {
+                    Amount = command.Amount,
+                    CategoryId = category.Id,
+                    Currency = "USD",
+                    Comment = "Trading",
+                    Type = FSTransactionType.income,
+                    Mode = FSTransactionMode.transfer,
+                    Date = DateOnly.FromDateTime(DateTime.UtcNow)
+                };
+
+                await _transactionService.AddTransactionWithFXAsync(transactionCommand, userId);
+               }
+            }
+
             _logger.LogInformation($"Recorded profit distribution of {command.Amount} for user {userId}.");
         }
 

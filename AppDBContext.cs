@@ -22,6 +22,7 @@ public class AppDbContext : IdentityDbContext<FSUser>
     public DbSet<FSTradingConfig> TradingConfigs { get; set; }
     public DbSet<FSProfitDistribution> FSProfitDistributions { get; set; }
     public DbSet<FSInsurancePayout> FSInsurancePayouts { get; set; }
+    public DbSet<FSImportedTransaction> FSImportedTransactions { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -239,5 +240,21 @@ public class AppDbContext : IdentityDbContext<FSUser>
                   .OnDelete(DeleteBehavior.Restrict);
         });
 
+        modelBuilder.Entity<FSImportedTransaction>(entity =>
+        {
+            entity
+                .HasOne<FSUser>()
+                .WithMany()
+                .HasForeignKey(t => t.FSUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity
+                .HasOne(t => t.FSTransaction)
+                .WithMany(t => t.FSImportedTransactions)
+                .HasForeignKey(t => t.FSTransactionId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.Property(t => t.Type).HasConversion<string>();
+        });
     }
 }

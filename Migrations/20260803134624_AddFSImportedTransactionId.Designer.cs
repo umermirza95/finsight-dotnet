@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace finsight_dotnet.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260803134624_AddFSImportedTransactionId")]
+    partial class AddFSImportedTransactionId
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -253,9 +256,6 @@ namespace finsight_dotnet.Migrations
                         .HasMaxLength(3)
                         .HasColumnType("character varying(3)");
 
-                    b.Property<Guid?>("FSTransactionId")
-                        .HasColumnType("uuid");
-
                     b.Property<string>("FSUserId")
                         .IsRequired()
                         .HasColumnType("text");
@@ -263,13 +263,14 @@ namespace finsight_dotnet.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsProcessed")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasColumnType("text");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("FSTransactionId");
 
                     b.HasIndex("FSUserId");
 
@@ -454,6 +455,9 @@ namespace finsight_dotnet.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("FSImportedTransactionId")
+                        .HasColumnType("character varying(200)");
+
                     b.Property<Guid?>("FSSubCategoryId")
                         .HasColumnType("uuid");
 
@@ -480,6 +484,8 @@ namespace finsight_dotnet.Migrations
                     b.HasIndex("FSCategoryId");
 
                     b.HasIndex("FSCurrencyCode");
+
+                    b.HasIndex("FSImportedTransactionId");
 
                     b.HasIndex("FSSubCategoryId");
 
@@ -917,18 +923,11 @@ namespace finsight_dotnet.Migrations
 
             modelBuilder.Entity("Finsight.Models.FSImportedTransaction", b =>
                 {
-                    b.HasOne("Finsight.Models.FSTransaction", "FSTransaction")
-                        .WithMany("FSImportedTransactions")
-                        .HasForeignKey("FSTransactionId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("Finsight.Models.FSUser", null)
                         .WithMany()
                         .HasForeignKey("FSUserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
-
-                    b.Navigation("FSTransaction");
                 });
 
             modelBuilder.Entity("Finsight.Models.FSInsurancePayout", b =>
@@ -993,6 +992,10 @@ namespace finsight_dotnet.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Finsight.Models.FSImportedTransaction", "FSImportedTransaction")
+                        .WithMany()
+                        .HasForeignKey("FSImportedTransactionId");
+
                     b.HasOne("Finsight.Models.FSSubCategory", null)
                         .WithMany()
                         .HasForeignKey("FSSubCategoryId")
@@ -1003,6 +1006,8 @@ namespace finsight_dotnet.Migrations
                         .HasForeignKey("FSUserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("FSImportedTransaction");
                 });
 
             modelBuilder.Entity("Finsight.Models.FSTransactionEmail", b =>
@@ -1120,8 +1125,6 @@ namespace finsight_dotnet.Migrations
 
             modelBuilder.Entity("Finsight.Models.FSTransaction", b =>
                 {
-                    b.Navigation("FSImportedTransactions");
-
                     b.Navigation("Files");
                 });
 #pragma warning restore 612, 618
