@@ -10,7 +10,7 @@ namespace Finsight.Commands
         public decimal? SharesPerTranche { get; set; }
         public decimal? DistancePerTranche { get; set; }
         public bool? LogsOnly { get; set; }
-        public string? DefaultUserId { get; set; }
+        public string? ServerIp { get; set; }
         public string? Ticker { get; set; }
     }
 }

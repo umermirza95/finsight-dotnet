@@ -1,11 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
 using IBApi;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using Finsight.Interfaces;
 
@@ -26,14 +19,21 @@ namespace Finsight.Services.IBKR
         private readonly IMessagingService _messagingService;
         private TaskCompletionSource<bool>? _openOrdersTcs;
         
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<int, TaskCompletionSource<IEnumerable<(Contract Contract, Execution Execution)>>> _pendingExecutions = new();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<int, List<(Contract Contract, Execution Execution)>> _executionsData = new();
+        private int _nextReqId = 1;
+        
         private bool _isConnected;
         public bool IsConnected => _isConnected && _clientSocket.IsConnected();
 
-        public IBKRConnectionHandler(ILogger<IBKRConnectionHandler> logger, IServiceScopeFactory scopeFactory, IMessagingService messagingService)
+        private readonly string _userId;
+
+        public IBKRConnectionHandler(ILogger<IBKRConnectionHandler> logger, IServiceScopeFactory scopeFactory, IMessagingService messagingService, string userId)
         {
             _logger = logger;
             _scopeFactory = scopeFactory;
             _messagingService = messagingService;
+            _userId = userId;
             _signal = new EReaderMonitorSignal();
             _clientSocket = new EClientSocket(this, _signal);
         }
@@ -116,6 +116,28 @@ namespace Finsight.Services.IBKR
             return GetOpenOrders();
         }
 
+        public Task<IEnumerable<(Contract Contract, Execution Execution)>> GetExecutionsAsync()
+        {
+            var reqId = Interlocked.Increment(ref _nextReqId);
+            var tcs = new TaskCompletionSource<IEnumerable<(Contract Contract, Execution Execution)>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _pendingExecutions[reqId] = tcs;
+            _executionsData[reqId] = new List<(Contract Contract, Execution Execution)>();
+
+            _clientSocket.reqExecutions(reqId, new ExecutionFilter());
+
+            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            cts.Token.Register(() => 
+            {
+                if (_pendingExecutions.TryRemove(reqId, out var pendingTcs))
+                {
+                    _executionsData.TryRemove(reqId, out _);
+                    pendingTcs.TrySetException(new TimeoutException("Timeout waiting for executions from IBKR."));
+                }
+            });
+
+            return tcs.Task;
+        }
+
         public override void nextValidId(int orderId)
         {
             _isConnected = true;
@@ -130,6 +152,30 @@ namespace Finsight.Services.IBKR
             // Execution object only contains Cumulative Quantity and specific Execution Shares, but no Remaining Quantity.
             // We log the fill here but handle the trading logic in orderStatus where we have the 'remaining' field.
             _logger.LogInformation($"Execution Details: OrderId={execution.OrderId}, ExecId={execution.ExecId}, Symbol={contract.Symbol}, Side={execution.Side}, Shares={execution.Shares}, Price={execution.Price}");
+            
+            if (_executionsData.TryGetValue(reqId, out var list))
+            {
+                lock (list)
+                {
+                    list.Add((contract, execution));
+                }
+            }
+        }
+
+        public override void execDetailsEnd(int reqId)
+        {
+            _logger.LogInformation($"Execution Details End for ReqId={reqId}");
+            if (_pendingExecutions.TryRemove(reqId, out var tcs))
+            {
+                if (_executionsData.TryRemove(reqId, out var data))
+                {
+                    tcs.TrySetResult(data);
+                }
+                else
+                {
+                    tcs.TrySetResult(new List<(Contract Contract, Execution Execution)>());
+                }
+            }
         }
 
         public override void orderStatus(int orderId, string status, double filled, double remaining, double avgFillPrice, int permId, int parentId, double lastFillPrice, int clientId, string whyHeld, double mktCapPrice)
@@ -153,22 +199,18 @@ namespace Finsight.Services.IBKR
                         var direction = orderInfo.Order.Action.Equals("BOT", StringComparison.OrdinalIgnoreCase) || orderInfo.Order.Action.Equals("BUY", StringComparison.OrdinalIgnoreCase) 
                                         ? Finsight.Enums.TradeDirection.BUY : Finsight.Enums.TradeDirection.SELL;
                         
-                        await messagingService.SendMessageAsync($"*Order Executed (IBKR)*: {orderInfo.Order.Action} {filled} shares of {orderInfo.Contract.Symbol} at Avg Price ${avgFillPrice}");
-                        
-                        var config = await tradingService.GetTradingConfigAsync();
-                        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                        var defaultUserId = config?.DefaultUserId ?? (await dbContext.Users.FirstOrDefaultAsync())?.Id ?? "system";
+                        await messagingService.SendMessageAsync($"*Order Executed (IBKR)*: {orderInfo.Order.Action} {filled} shares of {orderInfo.Contract.Symbol} at Avg Price ${avgFillPrice} ID: {permId} {parentId}");
                         
                         var trade = new Finsight.Models.FSTrade
                         {
                             Id = Guid.NewGuid(),
-                            FSUserId = defaultUserId,
+                            FSUserId = _userId,
                             Ticker = orderInfo.Contract.Symbol,
                             TradeDirection = direction,
                             TradePrice = (decimal)avgFillPrice,
                             Quantity = (decimal)filled,
                             Date = DateTime.UtcNow,
-                            ExternalId = orderId.ToString(),
+                            ExternalId = permId.ToString(),
                             Commission = 1
                         };
                         

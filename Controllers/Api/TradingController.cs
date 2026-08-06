@@ -89,13 +89,81 @@ namespace Finsight.Controller
         }
 
 
+        [HttpPost("connect")]
+        public async Task<IActionResult> ConnectAsync([FromBody] Commands.ConnectCommand command, [FromServices] IBrokerService brokerService)
+        {
+            try
+            {
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+                if (command.Connect)
+                {
+                    var config = await _tradingService.GetTradingConfigAsync(userId);
+                    if (config == null || string.IsNullOrEmpty(config.ServerIp))
+                    {
+                        return BadRequest(new { error = "Trading config or Server IP is not set for this user." });
+                    }
+
+                    var host = config.ServerIp;
+                    var port = 7497; // default port
+
+                    if (config.ServerIp.Contains(':'))
+                    {
+                        var parts = config.ServerIp.Split(':');
+                        host = parts[0];
+                        if (int.TryParse(parts[1], out int parsedPort))
+                        {
+                            port = parsedPort;
+                        }
+                    }
+
+                    // ClientId only needs to be unique per IB Gateway instance.
+                    // If each user connects to a different gateway, 1 is fine.
+                    // But to be completely safe even if they share a gateway, we can generate a unique clientId from their userId.
+                    var clientId = Math.Abs(userId.GetHashCode()) % 10000;
+
+                    brokerService.Connect(host, port, clientId, userId);
+                }
+                else
+                {
+                    brokerService.Disconnect(userId);
+                }
+
+                return Ok(new { success = true });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpGet("status")]
+        public IActionResult GetStatus([FromServices] IBrokerService brokerService)
+        {
+            try
+            {
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+                return Ok(new { isConnected = brokerService.IsConnected(userId) });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
         [HttpGet("config")]
         public async Task<IActionResult> GetConfigAsync([FromServices] IBrokerService brokerService)
         {
             try
             {
-                var config = await _tradingService.GetTradingConfigAsync();
-                return Ok(new { config = config, isConnected = brokerService.IsConnected });
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+                var config = await _tradingService.GetTradingConfigAsync(userId);
+                return Ok(new { config = config, isConnected = brokerService.IsConnected(userId) });
             }
             catch (Exception ex)
             {
@@ -104,27 +172,14 @@ namespace Finsight.Controller
         }
 
         [HttpPut("config")]
-        public async Task<IActionResult> UpdateConfigAsync([FromBody] Commands.UpdateTradingConfigCommand dto, [FromServices] IBrokerService brokerService)
+        public async Task<IActionResult> UpdateConfigAsync([FromBody] Commands.UpdateTradingConfigCommand dto)
         {
             try
             {
-                var previousConfig = await _tradingService.GetTradingConfigAsync();
-                bool wasAutoTradeOn = previousConfig?.AutoTrade ?? false;
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-                var config = await _tradingService.UpdateTradingConfigAsync(dto);
-
-                if (dto.AutoTrade.HasValue && dto.AutoTrade.Value != wasAutoTradeOn)
-                {
-                    if (dto.AutoTrade.Value)
-                    {
-                        brokerService.Connect();
-                    }
-                    else
-                    {
-                        brokerService.Disconnect();
-                    }
-                }
-
+                var config = await _tradingService.UpdateTradingConfigAsync(userId, dto);
                 return Ok(config);
             }
             catch (Exception ex)
@@ -138,7 +193,10 @@ namespace Finsight.Controller
         {
             try
             {
-                var orders = await brokerService.GetActiveOrdersAsync();
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+                var orders = await brokerService.GetActiveOrdersAsync(userId);
                 return Ok(orders);
             }
             catch (Exception ex)
@@ -152,12 +210,15 @@ namespace Finsight.Controller
         {
             try
             {
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
                 var direction = request.Direction.Equals("BUY", StringComparison.OrdinalIgnoreCase) 
                                 ? Finsight.Enums.TradeDirection.BUY : Finsight.Enums.TradeDirection.SELL;
                                 
-                await brokerService.PlaceLimitOrderAsync(request.Ticker, direction, request.LimitPrice, request.Quantity, false, request.Account);
+                await brokerService.PlaceLimitOrderAsync(userId, request.Ticker, direction, request.LimitPrice, request.Quantity, false, request.Account);
                 
-                var orders = await brokerService.GetActiveOrdersAsync();
+                var orders = await brokerService.GetActiveOrdersAsync(userId);
                 return Ok(new { message = "Order placed successfully.", orders = orders });
             }
             catch (Exception ex)
@@ -171,7 +232,10 @@ namespace Finsight.Controller
         {
             try
             {
-                await brokerService.AdjustOrderPriceAsync(request.PermId, request.NewPrice);
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+                await brokerService.AdjustOrderPriceAsync(userId, request.PermId, request.NewPrice);
                 return Ok(new { message = "Order price adjusted successfully." });
             }
             catch (InvalidOperationException ex)
@@ -210,7 +274,10 @@ namespace Finsight.Controller
         {
             try
             {
-                await brokerService.CancelOrderAsync(orderId);
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+                await brokerService.CancelOrderAsync(userId, orderId);
                 return Ok(new { message = "Order cancelled successfully." });
             }
             catch (InvalidOperationException ex)
@@ -228,7 +295,10 @@ namespace Finsight.Controller
         {
             try
             {
-                await brokerService.CancelAllOrdersAsync(false);
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+                await brokerService.CancelAllOrdersAsync(userId, false);
                 return Ok(new { message = "All orders cancelled successfully." });
             }
             catch (Exception ex)

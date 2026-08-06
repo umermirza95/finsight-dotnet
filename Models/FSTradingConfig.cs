@@ -25,7 +25,9 @@ namespace Finsight.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal DistancePerTranche { get; set; }
 
-        public string? DefaultUserId { get; set; }
+        public string? FSUserId { get; set; }
+        
+        public string? ServerIp { get; set; }
         
         public string? Ticker { get; set; }
     }

@@ -1,16 +1,10 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net.Http;
-using System.Threading.Tasks;
+
 using System.Xml.Linq;
 using Finsight.Enums;
 using Finsight.Interfaces;
 using Finsight.Models;
 using IBApi;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
 using Finsight.DTOs;
 
 namespace Finsight.Services
@@ -21,37 +15,40 @@ namespace Finsight.Services
         private readonly AppDbContext _dbContext;
         private readonly IConfiguration _configuration;
         private readonly ILogger<IBKRBrokerService> _logger;
-        private readonly IBKR.IBKRConnectionHandler _connectionHandler;
+        private readonly IBKR.IIBKRConnectionManager _connectionManager;
         private readonly IMessagingService _messagingService;
 
-        public IBKRBrokerService(HttpClient httpClient, AppDbContext dbContext, IConfiguration configuration, ILogger<IBKRBrokerService> logger, IBKR.IBKRConnectionHandler connectionHandler, IMessagingService messagingService)
+        public IBKRBrokerService(HttpClient httpClient, AppDbContext dbContext, IConfiguration configuration, ILogger<IBKRBrokerService> logger, IBKR.IIBKRConnectionManager connectionManager, IMessagingService messagingService)
         {
             _httpClient = httpClient;
             _dbContext = dbContext;
             _configuration = configuration;
             _logger = logger;
-            _connectionHandler = connectionHandler;
+            _connectionManager = connectionManager;
             _messagingService = messagingService;
         }
 
-        public bool IsConnected => _connectionHandler.Client.IsConnected();
-
-        public void Connect()
+        public bool IsConnected(string userId) 
         {
-            var host = _configuration["IBKR:Host"] ?? "127.0.0.1";
-            var port = int.Parse(_configuration["IBKR:Port"] ?? "7497");
-            var clientId = int.Parse(_configuration["IBKR:ClientId"] ?? "1");
-            _connectionHandler.Connect(host, port, clientId);
+            var handler = _connectionManager.GetHandler(userId);
+            return handler != null && handler.Client.IsConnected();
         }
 
-        public void Disconnect()
+        public void Connect(string host, int port, int clientId, string userId)
         {
-            _connectionHandler.Disconnect();
+            var handler = _connectionManager.GetOrCreateHandler(userId);
+            handler.Connect(host, port, clientId);
         }
 
-        public async Task PlaceLimitOrderAsync(string ticker, TradeDirection direction, decimal limitPrice, decimal quantity, bool logsOnly, string? account = null)
+        public void Disconnect(string userId)
         {
-            if (!_connectionHandler.Client.IsConnected())
+            _connectionManager.RemoveHandler(userId);
+        }
+
+        public async Task PlaceLimitOrderAsync(string userId, string ticker, TradeDirection direction, decimal limitPrice, decimal quantity, bool logsOnly, string? account = null)
+        {
+            var handler = _connectionManager.GetHandler(userId);
+            if (handler == null || !handler.Client.IsConnected())
                 throw new Exception("IBKR is not connected.");
 
             await _messagingService.SendMessageAsync($"*Action Intent*: Placing ${direction} limit order for {quantity} shares of {ticker} at ${limitPrice}.");
@@ -80,12 +77,12 @@ namespace Finsight.Services
             // Hardcoded default account as requested
             order.Account = !string.IsNullOrEmpty(account) ? account : "U7630023";
 
-            var orderId = _connectionHandler.GetNextOrderId();
+            var orderId = handler.GetNextOrderId();
             
             // Set up the wait task before sending the order to avoid race conditions
-            var waitTask = _connectionHandler.WaitForOrderPlacementAsync(orderId, TimeSpan.FromSeconds(10));
+            var waitTask = handler.WaitForOrderPlacementAsync(orderId, TimeSpan.FromSeconds(10));
             
-            _connectionHandler.Client.placeOrder(orderId, contract, order);
+            handler.Client.placeOrder(orderId, contract, order);
 
             // Wait for confirmation or error from IBKR
             await waitTask;
@@ -93,27 +90,29 @@ namespace Finsight.Services
             _logger.LogInformation($"Placed limit order {orderId} for {ticker} {direction} {quantity} @ {limitPrice}");
         }
 
-        public async Task CancelAllOrdersAsync(bool logsOnly)
+        public async Task CancelAllOrdersAsync(string userId, bool logsOnly)
         {
             await _messagingService.SendMessageAsync("*Action Intent*: Canceling all open orders.");
             if(logsOnly)
                 return;
 
-            if (!_connectionHandler.Client.IsConnected())
+            var handler = _connectionManager.GetHandler(userId);
+            if (handler == null || !handler.Client.IsConnected())
                 throw new Exception("IBKR is not connected.");
 
 
-            _connectionHandler.Client.reqGlobalCancel();
+            handler.Client.reqGlobalCancel();
             _logger.LogInformation("Requested global cancel of all open orders.");
         }
 
-        public async Task<List<ActiveOrderDTO>> GetActiveOrdersAsync()
+        public async Task<List<ActiveOrderDTO>> GetActiveOrdersAsync(string userId)
         {
-            if (!IsConnected)
+            var handler = _connectionManager.GetHandler(userId);
+            if (handler == null || !handler.Client.IsConnected())
                 return new List<ActiveOrderDTO>();
 
             // Trigger a refresh and wait for IBKR to send all open orders
-            var rawOrders = await _connectionHandler.RefreshAndGetOpenOrdersAsync();
+            var rawOrders = await handler.RefreshAndGetOpenOrdersAsync();
 
             var openOrders = rawOrders.Select(o => new ActiveOrderDTO
             {
@@ -127,12 +126,13 @@ namespace Finsight.Services
             return openOrders;
         }
 
-        public async Task AdjustOrderPriceAsync(int permId, decimal newPrice)
+        public async Task AdjustOrderPriceAsync(string userId, int permId, decimal newPrice)
         {
-            if (!IsConnected)
+            var handler = _connectionManager.GetHandler(userId);
+            if (handler == null || !handler.Client.IsConnected())
                 throw new Exception("IBKR is not connected.");
 
-            var openOrders = _connectionHandler.GetOpenOrders();
+            var openOrders = handler.GetOpenOrders();
             var targetOrder = openOrders.FirstOrDefault(o => o.OrderId == permId); // Note: Tuple's OrderId field contains the PermId because of GetOpenOrders() mapping
 
             if (targetOrder.Order == null)
@@ -147,19 +147,20 @@ namespace Finsight.Services
 
             targetOrder.Order.LmtPrice = (double)newPrice;
             
-            var waitTask = _connectionHandler.WaitForOrderPlacementAsync(targetOrder.Order.OrderId, TimeSpan.FromSeconds(10));
-            _connectionHandler.Client.placeOrder(targetOrder.Order.OrderId, targetOrder.Contract, targetOrder.Order);
+            var waitTask = handler.WaitForOrderPlacementAsync(targetOrder.Order.OrderId, TimeSpan.FromSeconds(10));
+            handler.Client.placeOrder(targetOrder.Order.OrderId, targetOrder.Contract, targetOrder.Order);
             
             // Wait for confirmation or error from IBKR
             await waitTask;
         }
 
-        public async Task CancelOrderAsync(int permId)
+        public async Task CancelOrderAsync(string userId, int permId)
         {
-            if (!IsConnected)
+            var handler = _connectionManager.GetHandler(userId);
+            if (handler == null || !handler.Client.IsConnected())
                 throw new Exception("IBKR is not connected.");
 
-            var openOrders = _connectionHandler.GetOpenOrders();
+            var openOrders = handler.GetOpenOrders();
             var targetOrder = openOrders.FirstOrDefault(o => o.OrderId == permId);
 
             if (targetOrder.Order == null)
@@ -172,8 +173,8 @@ namespace Finsight.Services
                 throw new InvalidOperationException("Cannot cancel orders placed manually or externally. Only API-originated orders can be cancelled without binding.");
             }
 
-            var waitTask = _connectionHandler.WaitForOrderPlacementAsync(targetOrder.Order.OrderId, TimeSpan.FromSeconds(10));
-            _connectionHandler.Client.cancelOrder(targetOrder.Order.OrderId);
+            var waitTask = handler.WaitForOrderPlacementAsync(targetOrder.Order.OrderId, TimeSpan.FromSeconds(10));
+            handler.Client.cancelOrder(targetOrder.Order.OrderId);
             
             // Wait for confirmation or error from IBKR
             await waitTask;
@@ -190,144 +191,61 @@ namespace Finsight.Services
                 return;
             }
 
-            var token = user.IBKRToken;
-            var queryId = user.IBKRQueryId;
-
-            if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(queryId))
+            var handler = _connectionManager.GetHandler(userId);
+            if (handler == null || !handler.Client.IsConnected())
             {
-                throw new Exception($"IBKR Token or QueryId is not configured for the user {userId}");
+                _logger.LogWarning("Cannot fetch today's trades. IBKR is not connected.");
+                throw new Exception("IBKR is not connected.");
             }
 
-            var requestUrl = $"https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/SendRequest?t={token}&q={queryId}&v=3";
-            _logger.LogInformation("Requesting {Url}", requestUrl);
-            var response = await _httpClient.GetAsync(requestUrl);
-            response.EnsureSuccessStatusCode();
+            _logger.LogInformation("Fetching today's executions from IBKR via API.");
+            var executionsData = await handler.GetExecutionsAsync();
+            var newTrades = new List<FSTrade>();
 
-            var xmlContent = await response.Content.ReadAsStringAsync();
-            var doc = XDocument.Parse(xmlContent);
-            var status = doc.Descendants("Status").FirstOrDefault()?.Value;
-
-            if (status != "Success")
-            {
-                var error = doc.Descendants("ErrorMessage").FirstOrDefault()?.Value;
-                throw new Exception($"IBKR Flex request failed: {error}");
-            }
-
-            var referenceCode = doc.Descendants("ReferenceCode").FirstOrDefault()?.Value;
-            if (string.IsNullOrEmpty(referenceCode))
-            {
-                throw new Exception("Reference code not found in IBKR response.");
-            }
-
-            string? csvData = null;
-            var statementUrl = $"https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement?q={referenceCode}&t={token}&v=3";
-            _logger.LogInformation("Polling for statement at {Url}", statementUrl);
-            for (int i = 0; i < 12; i++)
-            {
-                await Task.Delay(5000); // wait 5 seconds
-                var statementResponse = await _httpClient.GetAsync(statementUrl);
-
-                if (statementResponse.IsSuccessStatusCode)
-                {
-                    csvData = await statementResponse.Content.ReadAsStringAsync();
-
-                    // If it returns XML with an error about report not ready, it's not CSV yet.
-                    if (csvData.StartsWith("<"))
-                    {
-                        var tryDoc = XDocument.Parse(csvData);
-                        var tryStatus = tryDoc.Descendants("Status").FirstOrDefault()?.Value;
-                        if (tryStatus == "Warn")
-                        {
-                            // "Statement generation in progress"
-                            continue;
-                        }
-                    }
-
-                    break;
-                }
-            }
-
-            if (string.IsNullOrEmpty(csvData) || csvData.StartsWith("<"))
-            {
-                throw new Exception("Failed to retrieve CSV data from IBKR after polling.");
-            }
-
-            await ProcessCsvDataAsync(csvData, userId);
-            // await MatchClosedTradesAsync(userId); // Moved to FSTradingService
-        }
-
-        private async Task ProcessCsvDataAsync(string csvData, string userId)
-        {
-            var lines = csvData.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            _logger.LogInformation("Processing {LineCount} lines of CSV data from IBKR.", lines.Length);
-            var records = new List<IBKRTradeRecord>();
-
-            foreach (var line in lines)
-            {
-                if (string.IsNullOrWhiteSpace(line)) continue;
-
-                var parts = SplitCsvLine(line);
-                if (parts.Length >= 9)
-                {
-                    var buySell = parts[5].Trim().ToUpper();
-                    if (buySell == "BUY" || buySell == "SELL" || buySell == "B" || buySell == "S")
-                    {
-                        if (buySell == "B") buySell = "BUY";
-                        if (buySell == "S") buySell = "SELL";
-
-                        if (decimal.TryParse(parts[7], out var price) &&
-                            decimal.TryParse(parts[6], out var qty) &&
-                            decimal.TryParse(parts[8], out var comm))
-                        {
-                            records.Add(new IBKRTradeRecord
-                            {
-                                Symbol = parts[0].Trim(),
-                                TradePrice = price,
-                                Quantity = qty,
-                                IBCommission = comm,
-                                TradeDate = parts[4].Trim(),
-                                BuySell = buySell,
-                                IBOrderID = parts[1].Trim(),
-                                DateTime = parts[3].Trim()
-                            });
-                        }
-                        else
-                        {
-                            _logger.LogWarning("Found a Trade row but failed to parse decimals: Price={Price}, Qty={Qty}, Comm={Comm}", parts[7], parts[6], parts[8]);
-                        }
-                    }
-                }
-            }
-
-            var grouped = records.GroupBy(r => r.IBOrderID).ToList();
+            var grouped = executionsData.GroupBy(e => e.Execution.PermId.ToString()).ToList();
             var orderIds = grouped.Select(g => g.Key).ToList();
-
 
             var existingIds = await _dbContext.FSTrades
                 .Where(t => orderIds.Contains(t.ExternalId))
                 .Select(t => t.ExternalId)
                 .ToListAsync();
 
-            var newTrades = new List<FSTrade>();
-
             foreach (var group in grouped)
             {
-                if (!existingIds.Contains(group.Key!))
+                if (!existingIds.Contains(group.Key))
                 {
                     var first = group.First();
-                    var direction = first.BuySell == "BUY" ? TradeDirection.BUY : TradeDirection.SELL;
+                    var direction = (first.Execution.Side.Equals("BOT", StringComparison.OrdinalIgnoreCase) || first.Execution.Side.Equals("BUY", StringComparison.OrdinalIgnoreCase)) 
+                        ? TradeDirection.BUY : TradeDirection.SELL;
 
-                    var totalQty = group.Sum(x => Math.Abs(x.Quantity));
-                    var totalComm = group.Sum(x => Math.Abs(x.IBCommission));
-                    var vwap = totalQty > 0 ? group.Sum(x => x.TradePrice * Math.Abs(x.Quantity)) / totalQty : first.TradePrice;
+                    var totalQty = group.Sum(x => (decimal)x.Execution.Shares);
+                    var totalValue = group.Sum(x => (decimal)x.Execution.Shares * (decimal)x.Execution.Price);
+                    var vwap = totalQty > 0 ? totalValue / totalQty : (decimal)first.Execution.Price;
+                    var totalComm = 0m; 
 
-                    DateTime.TryParseExact(first.DateTime, "yyyyMMdd;HHmmss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var parsedDate);
+                    DateTime parsedDate = DateTime.UtcNow;
+                    try
+                    {
+                        if (!string.IsNullOrEmpty(first.Execution.Time))
+                        {
+                            string timeStr = first.Execution.Time;
+                            if (DateTime.TryParseExact(timeStr, "yyyyMMdd  HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var pd))
+                            {
+                                parsedDate = pd;
+                            }
+                            else if (DateTime.TryParseExact(timeStr, "yyyyMMdd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var pd2))
+                            {
+                                parsedDate = pd2;
+                            }
+                        }
+                    }
+                    catch { }
 
                     newTrades.Add(new FSTrade
                     {
                         Id = Guid.NewGuid(),
                         FSUserId = userId,
-                        Ticker = first.Symbol,
+                        Ticker = first.Contract.Symbol,
                         TradePrice = vwap,
                         TradeDirection = direction,
                         Quantity = totalQty,
@@ -342,45 +260,12 @@ namespace Finsight.Services
             {
                 _dbContext.FSTrades.AddRange(newTrades);
                 await _dbContext.SaveChangesAsync();
-                _logger.LogInformation($"Inserted {newTrades.Count} new trades from IBKR.");
+                _logger.LogInformation($"Inserted {newTrades.Count} new trades from IBKR API for today.");
             }
             else
             {
-                _logger.LogInformation("No new trades to insert from IBKR.");
+                _logger.LogInformation("No new trades to insert from IBKR API for today.");
             }
-        }
-
-        private class IBKRTradeRecord
-        {
-            public string Symbol { get; set; } = string.Empty;
-            public decimal TradePrice { get; set; }
-            public decimal Quantity { get; set; }
-            public decimal IBCommission { get; set; }
-            public string? TradeDate { get; set; }
-            public string? BuySell { get; set; }
-            public string? IBOrderID { get; set; }
-            public string? DateTime { get; set; }
-        }
-
-        private static string[] SplitCsvLine(string line)
-        {
-            var result = new List<string>();
-            bool inQuotes = false;
-            int startIndex = 0;
-            for (int i = 0; i < line.Length; i++)
-            {
-                if (line[i] == '\"')
-                {
-                    inQuotes = !inQuotes;
-                }
-                else if (line[i] == ',' && !inQuotes)
-                {
-                    result.Add(line.Substring(startIndex, i - startIndex).Trim('"', ' '));
-                    startIndex = i + 1;
-                }
-            }
-            result.Add(line.Substring(startIndex).Trim('"', ' '));
-            return result.ToArray();
         }
     }
 }

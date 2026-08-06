@@ -240,6 +240,14 @@ public class AppDbContext : IdentityDbContext<FSUser>
                   .OnDelete(DeleteBehavior.Restrict);
         });
 
+        modelBuilder.Entity<FSTradingConfig>(entity =>
+        {
+            entity.HasOne<FSUser>()
+                  .WithMany()
+                  .HasForeignKey(c => c.FSUserId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
         modelBuilder.Entity<FSImportedTransaction>(entity =>
         {
             entity

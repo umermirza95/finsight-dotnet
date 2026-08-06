@@ -182,7 +182,7 @@ namespace Finsight.Services
                 await MatchClosedTradesAsync(trade.FSUserId);
             }
 
-            var config = await GetTradingConfigAsync();
+            var config = await GetTradingConfigAsync(trade.FSUserId);
             if (config == null || !config.AutoTrade || config.SharesPerTranche == 0)
             {
                 _logger.LogInformation("AutoTrade is disabled. Ignoring trade execution.");
@@ -192,7 +192,7 @@ namespace Finsight.Services
             decimal shares = config.SharesPerTranche;
             decimal distance = config.DistancePerTranche;
 
-            await _brokerService.CancelAllOrdersAsync(config.LogsOnly);
+            await _brokerService.CancelAllOrdersAsync(trade.FSUserId, config.LogsOnly);
 
             var targetTicker = !string.IsNullOrWhiteSpace(config.Ticker) ? config.Ticker : trade.Ticker;
 
@@ -200,15 +200,15 @@ namespace Finsight.Services
             {
                 decimal targetSellPrice = trade.TradePrice + distance;
                
-                await _brokerService.PlaceLimitOrderAsync(targetTicker, TradeDirection.SELL, targetSellPrice, shares, config.LogsOnly);
+                await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.SELL, targetSellPrice, shares, config.LogsOnly);
                 
                 decimal targetBuyPrice = trade.TradePrice - distance;
-                await _brokerService.PlaceLimitOrderAsync(targetTicker, TradeDirection.BUY, targetBuyPrice, shares, config.LogsOnly);
+                await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, targetBuyPrice, shares, config.LogsOnly);
             }
             else // SELL
             {
                 decimal targetBuyPrice = trade.TradePrice - distance;
-                await _brokerService.PlaceLimitOrderAsync(targetTicker, TradeDirection.BUY, targetBuyPrice, shares, config.LogsOnly);
+                await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, targetBuyPrice, shares, config.LogsOnly);
 
                 // Get most recent open buy trade from the database
                 var mostRecentBuyTrade = await _dbContext.FSTrades
@@ -218,37 +218,38 @@ namespace Finsight.Services
 
                 if (mostRecentBuyTrade == null)
                 {
-                    await _brokerService.PlaceLimitOrderAsync(targetTicker, TradeDirection.BUY, trade.TradePrice, shares, config.LogsOnly);
+                    await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, trade.TradePrice, shares, config.LogsOnly);
                 }
                 else
                 {
                     if (mostRecentBuyTrade.TradePrice - distance > trade.TradePrice)
                     {
-                        await _brokerService.PlaceLimitOrderAsync(targetTicker, TradeDirection.BUY, trade.TradePrice, shares, config.LogsOnly);
+                        await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, trade.TradePrice, shares, config.LogsOnly);
                     }
                     else
                     {
                         decimal nextSellPrice = mostRecentBuyTrade.TradePrice + distance;
-                        await _brokerService.PlaceLimitOrderAsync(targetTicker, TradeDirection.SELL, nextSellPrice, shares, config.LogsOnly);
+                        await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.SELL, nextSellPrice, shares, config.LogsOnly);
                     }
                 }
             }
             
         }
-        public async Task<FSTradingConfig?> GetTradingConfigAsync()
+        public async Task<FSTradingConfig?> GetTradingConfigAsync(string userId)
         {
-            return await _dbContext.TradingConfigs.FirstOrDefaultAsync();
+            return await _dbContext.TradingConfigs.FirstOrDefaultAsync(c => c.FSUserId == userId);
         }
 
-        public async Task<FSTradingConfig> UpdateTradingConfigAsync(Finsight.Commands.UpdateTradingConfigCommand dto)
+        public async Task<FSTradingConfig> UpdateTradingConfigAsync(string userId, Finsight.Commands.UpdateTradingConfigCommand dto)
         {
-            var config = await _dbContext.TradingConfigs.FirstOrDefaultAsync();
+            var config = await _dbContext.TradingConfigs.FirstOrDefaultAsync(c => c.FSUserId == userId);
             
             if (config == null)
             {
                 config = new FSTradingConfig
                 {
-                    Id = Guid.NewGuid()
+                    Id = Guid.NewGuid(),
+                    FSUserId = userId
                 };
                 _dbContext.TradingConfigs.Add(config);
             }
@@ -259,7 +260,7 @@ namespace Finsight.Services
             if (dto.SharesPerTranche.HasValue) config.SharesPerTranche = dto.SharesPerTranche.Value;
             if (dto.DistancePerTranche.HasValue) config.DistancePerTranche = dto.DistancePerTranche.Value;
             if (dto.LogsOnly.HasValue) config.LogsOnly = dto.LogsOnly.Value;
-            if (dto.DefaultUserId != null) config.DefaultUserId = dto.DefaultUserId;
+            if (dto.ServerIp != null) config.ServerIp = dto.ServerIp;
             if (dto.Ticker != null) config.Ticker = dto.Ticker;
 
             await _dbContext.SaveChangesAsync();

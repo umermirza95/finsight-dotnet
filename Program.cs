@@ -33,12 +33,11 @@ builder.Services.AddScoped<IBudgetService, FSBudgetService>();
 builder.Services.AddScoped<IExchangeRateService, FSExchangeRateService>();
 builder.Services.AddHttpClient<IFXAPIService, WiseFXAPIService>();
 
-builder.Services.AddSingleton<Finsight.Services.IBKR.IBKRConnectionHandler>();
+builder.Services.AddSingleton<Finsight.Services.IBKR.IIBKRConnectionManager, Finsight.Services.IBKR.IBKRConnectionManager>();
 builder.Services.AddHttpClient<IBrokerService, IBKRBrokerService>();
 builder.Services.AddScoped<ITradingService, FSTradingService>();
 builder.Services.AddHttpClient<IMarketDataService, AlpacaMarketDataService>();
 builder.Services.AddHttpClient<IMessagingService, SlackMessagingService>();
-builder.Services.AddHostedService<AutoTradeBackgroundService>();
 
 builder.Logging.AddOpenTelemetry(logging =>
 {

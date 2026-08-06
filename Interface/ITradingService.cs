@@ -12,8 +12,8 @@ namespace Finsight.Interfaces
         Task MatchClosedTradesAsync(string userId);
         Task<List<OpenTradeDTO>> GetOpenTradesAsync(string userId);
         Task<List<ClosedTradeResponse>> GetClosedTradesAsync(string userId, GetTradesQuery query);
-        Task<FSTradingConfig?> GetTradingConfigAsync();
-        Task<FSTradingConfig> UpdateTradingConfigAsync(Finsight.Commands.UpdateTradingConfigCommand dto);
+        Task<FSTradingConfig?> GetTradingConfigAsync(string userId);
+        Task<FSTradingConfig> UpdateTradingConfigAsync(string userId, Finsight.Commands.UpdateTradingConfigCommand dto);
         Task HandleTradeExecutionAsync(FSTrade trade);
         Task ManualMatchTradesAsync(string userId, Finsight.Commands.ManualMatchCommand command);
         Task MakeProfitDistributionAsync(string userId, Finsight.Commands.MakeProfitDistributionCommand command);
