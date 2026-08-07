@@ -221,7 +221,7 @@ namespace Finsight.Services
                     var totalQty = group.Sum(x => (decimal)x.Execution.Shares);
                     var totalValue = group.Sum(x => (decimal)x.Execution.Shares * (decimal)x.Execution.Price);
                     var vwap = totalQty > 0 ? totalValue / totalQty : (decimal)first.Execution.Price;
-                    var totalComm = 0m; 
+                    var totalComm = group.Sum(x => (decimal)(x.Commission?.Commission ?? 0));
 
                     DateTime parsedDate = DateTime.UtcNow;
                     try

@@ -19,8 +19,9 @@ namespace Finsight.Services.IBKR
         private readonly IMessagingService _messagingService;
         private TaskCompletionSource<bool>? _openOrdersTcs;
         
-        private readonly System.Collections.Concurrent.ConcurrentDictionary<int, TaskCompletionSource<IEnumerable<(Contract Contract, Execution Execution)>>> _pendingExecutions = new();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<int, TaskCompletionSource<IEnumerable<(Contract Contract, Execution Execution, CommissionReport? Commission)>>> _pendingExecutions = new();
         private readonly System.Collections.Concurrent.ConcurrentDictionary<int, List<(Contract Contract, Execution Execution)>> _executionsData = new();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CommissionReport> _commissionReports = new();
         private int _nextReqId = 1;
         
         private bool _isConnected;
@@ -116,10 +117,10 @@ namespace Finsight.Services.IBKR
             return GetOpenOrders();
         }
 
-        public Task<IEnumerable<(Contract Contract, Execution Execution)>> GetExecutionsAsync()
+        public Task<IEnumerable<(Contract Contract, Execution Execution, CommissionReport? Commission)>> GetExecutionsAsync()
         {
             var reqId = Interlocked.Increment(ref _nextReqId);
-            var tcs = new TaskCompletionSource<IEnumerable<(Contract Contract, Execution Execution)>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var tcs = new TaskCompletionSource<IEnumerable<(Contract Contract, Execution Execution, CommissionReport? Commission)>>(TaskCreationOptions.RunContinuationsAsynchronously);
             _pendingExecutions[reqId] = tcs;
             _executionsData[reqId] = new List<(Contract Contract, Execution Execution)>();
 
@@ -162,6 +163,12 @@ namespace Finsight.Services.IBKR
             }
         }
 
+        public override void commissionReport(CommissionReport commissionReport)
+        {
+            _logger.LogInformation($"CommissionReport: ExecId={commissionReport.ExecId}, Commission={commissionReport.Commission}");
+            _commissionReports[commissionReport.ExecId] = commissionReport;
+        }
+
         public override void execDetailsEnd(int reqId)
         {
             _logger.LogInformation($"Execution Details End for ReqId={reqId}");
@@ -169,11 +176,16 @@ namespace Finsight.Services.IBKR
             {
                 if (_executionsData.TryRemove(reqId, out var data))
                 {
-                    tcs.TrySetResult(data);
+                    var result = data.Select(d => 
+                    {
+                        _commissionReports.TryGetValue(d.Execution.ExecId, out var cr);
+                        return (d.Contract, d.Execution, cr);
+                    }).ToList();
+                    tcs.TrySetResult(result);
                 }
                 else
                 {
-                    tcs.TrySetResult(new List<(Contract Contract, Execution Execution)>());
+                    tcs.TrySetResult(new List<(Contract Contract, Execution Execution, CommissionReport? Commission)>());
                 }
             }
         }
