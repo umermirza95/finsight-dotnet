@@ -182,7 +182,7 @@ namespace Finsight.Services
             _logger.LogInformation($"Requested cancel of order {permId}");
         }
 
-        public async Task FetchMonthlyTradesAsync(string userId)
+        public async Task FetchTodayTradesAsync(string userId)
         {
             var user = await _dbContext.Users.FindAsync(userId);
             if (user == null)
@@ -205,42 +205,54 @@ namespace Finsight.Services
             var grouped = executionsData.GroupBy(e => e.Execution.PermId.ToString()).ToList();
             var orderIds = grouped.Select(g => g.Key).ToList();
 
-            var existingIds = await _dbContext.FSTrades
+            var existingTrades = await _dbContext.FSTrades
                 .Where(t => orderIds.Contains(t.ExternalId))
-                .Select(t => t.ExternalId)
                 .ToListAsync();
+
+            var existingTradesDict = existingTrades.GroupBy(t => t.ExternalId).ToDictionary(g => g.Key, g => g.First());
+            var updatedTradesCount = 0;
 
             foreach (var group in grouped)
             {
-                if (!existingIds.Contains(group.Key))
+                var first = group.First();
+                var direction = (first.Execution.Side.Equals("BOT", StringComparison.OrdinalIgnoreCase) || first.Execution.Side.Equals("BUY", StringComparison.OrdinalIgnoreCase)) 
+                    ? TradeDirection.BUY : TradeDirection.SELL;
+
+                var totalQty = group.Sum(x => (decimal)x.Execution.Shares);
+                var totalValue = group.Sum(x => (decimal)x.Execution.Shares * (decimal)x.Execution.Price);
+                var vwap = totalQty > 0 ? totalValue / totalQty : (decimal)first.Execution.Price;
+                var totalComm = group.Sum(x => (decimal)(x.Commission?.Commission ?? 0));
+
+                DateTime parsedDate = DateTime.UtcNow;
+                try
                 {
-                    var first = group.First();
-                    var direction = (first.Execution.Side.Equals("BOT", StringComparison.OrdinalIgnoreCase) || first.Execution.Side.Equals("BUY", StringComparison.OrdinalIgnoreCase)) 
-                        ? TradeDirection.BUY : TradeDirection.SELL;
-
-                    var totalQty = group.Sum(x => (decimal)x.Execution.Shares);
-                    var totalValue = group.Sum(x => (decimal)x.Execution.Shares * (decimal)x.Execution.Price);
-                    var vwap = totalQty > 0 ? totalValue / totalQty : (decimal)first.Execution.Price;
-                    var totalComm = group.Sum(x => (decimal)(x.Commission?.Commission ?? 0));
-
-                    DateTime parsedDate = DateTime.UtcNow;
-                    try
+                    if (!string.IsNullOrEmpty(first.Execution.Time))
                     {
-                        if (!string.IsNullOrEmpty(first.Execution.Time))
+                        string timeStr = first.Execution.Time;
+                        if (DateTime.TryParseExact(timeStr, "yyyyMMdd  HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var pd))
                         {
-                            string timeStr = first.Execution.Time;
-                            if (DateTime.TryParseExact(timeStr, "yyyyMMdd  HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var pd))
-                            {
-                                parsedDate = pd;
-                            }
-                            else if (DateTime.TryParseExact(timeStr, "yyyyMMdd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var pd2))
-                            {
-                                parsedDate = pd2;
-                            }
+                            parsedDate = pd;
+                        }
+                        else if (DateTime.TryParseExact(timeStr, "yyyyMMdd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var pd2))
+                        {
+                            parsedDate = pd2;
                         }
                     }
-                    catch { }
+                }
+                catch { }
 
+                if (existingTradesDict.TryGetValue(group.Key, out var existingTrade))
+                {
+                    existingTrade.Ticker = first.Contract.Symbol;
+                    existingTrade.TradePrice = vwap;
+                    existingTrade.TradeDirection = direction;
+                    existingTrade.Quantity = totalQty;
+                    existingTrade.Commission = totalComm;
+                    existingTrade.Date = parsedDate;
+                    updatedTradesCount++;
+                }
+                else
+                {
                     newTrades.Add(new FSTrade
                     {
                         Id = Guid.NewGuid(),
@@ -259,12 +271,16 @@ namespace Finsight.Services
             if (newTrades.Any())
             {
                 _dbContext.FSTrades.AddRange(newTrades);
+            }
+
+            if (newTrades.Any() || updatedTradesCount > 0)
+            {
                 await _dbContext.SaveChangesAsync();
-                _logger.LogInformation($"Inserted {newTrades.Count} new trades from IBKR API for today.");
+                _logger.LogInformation($"Inserted {newTrades.Count} new trades and updated {updatedTradesCount} existing trades from IBKR API for today.");
             }
             else
             {
-                _logger.LogInformation("No new trades to insert from IBKR API for today.");
+                _logger.LogInformation("No new trades to insert or update from IBKR API for today.");
             }
         }
     }

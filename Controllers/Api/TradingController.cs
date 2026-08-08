@@ -28,7 +28,8 @@ namespace Finsight.Controller
                 var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
                 if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-                await _tradingService.FetchMonthlyTradesAsync(userId);
+                await _tradingService.FetchTodayTradesAsync(userId);
+                await _tradingService.MatchClosedTradesAsync(userId);
                 return Ok(new { message = "Trades synchronized successfully." });
             }
             catch (Exception ex)
@@ -118,12 +119,7 @@ namespace Finsight.Controller
                         }
                     }
 
-                    // ClientId only needs to be unique per IB Gateway instance.
-                    // If each user connects to a different gateway, 1 is fine.
-                    // But to be completely safe even if they share a gateway, we can generate a unique clientId from their userId.
-                    var clientId = Math.Abs(userId.GetHashCode()) % 10000;
-
-                    brokerService.Connect(host, port, clientId, userId);
+                    brokerService.Connect(host, port, 1234, userId);
                 }
                 else
                 {

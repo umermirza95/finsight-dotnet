@@ -213,6 +213,7 @@ namespace Finsight.Services.IBKR
                         
                         await messagingService.SendMessageAsync($"*Order Executed (IBKR)*: {orderInfo.Order.Action} {filled} shares of {orderInfo.Contract.Symbol} at Avg Price ${avgFillPrice} ID: {permId} {parentId}");
                         
+                        var now = DateTime.UtcNow;
                         var trade = new Finsight.Models.FSTrade
                         {
                             Id = Guid.NewGuid(),
@@ -221,7 +222,7 @@ namespace Finsight.Services.IBKR
                             TradeDirection = direction,
                             TradePrice = (decimal)avgFillPrice,
                             Quantity = (decimal)filled,
-                            Date = DateTime.UtcNow,
+                            Date = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, now.Second, DateTimeKind.Utc),
                             ExternalId = permId.ToString(),
                             Commission = 1
                         };

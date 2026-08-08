@@ -19,7 +19,7 @@ namespace Finsight.Services
         private readonly IMarketDataService _marketDataService;
         private readonly IBrokerService _brokerService;
         private readonly ITransactionService _transactionService;
-      
+
 
         public FSTradingService(AppDbContext dbContext, ILogger<FSTradingService> logger, IMarketDataService marketDataService, IBrokerService brokerService, ITransactionService transactionService)
         {
@@ -30,16 +30,16 @@ namespace Finsight.Services
             _transactionService = transactionService;
         }
 
-        public async Task FetchMonthlyTradesAsync(string userId)
+
+        public async Task FetchTodayTradesAsync(string userId)
         {
-            await _brokerService.FetchMonthlyTradesAsync(userId);
-            await MatchClosedTradesAsync(userId);
+            await _brokerService.FetchTodayTradesAsync(userId);
         }
 
         public async Task MatchClosedTradesAsync(string userId)
         {
             var unclosedTrades = await _dbContext.FSTrades
-                .Where(t => t.FSUserId == userId 
+                .Where(t => t.FSUserId == userId
                 && !_dbContext.FSClosedTrades.Any(c => c.OrderOpenId == t.ExternalId || c.OrderCloseId == t.ExternalId))
                 .ToListAsync();
 
@@ -102,7 +102,7 @@ namespace Finsight.Services
         public async Task<List<OpenTradeDTO>> GetOpenTradesAsync(string userId)
         {
             var trades = await _dbContext.FSTrades
-                .Where(t => t.FSUserId == userId 
+                .Where(t => t.FSUserId == userId
                 && !_dbContext.FSClosedTrades.Any(c => c.OrderOpenId == t.ExternalId || c.OrderCloseId == t.ExternalId))
                 .OrderByDescending(t => t.Date)
                 .ToListAsync();
@@ -110,7 +110,7 @@ namespace Finsight.Services
             var tickers = trades.Select(t => t.Ticker).Distinct().ToList();
             var prices = await _marketDataService.GetPricesAsync(tickers);
 
-            var tradeDtos = trades.Select(trade => 
+            var tradeDtos = trades.Select(trade =>
             {
                 prices.TryGetValue(trade.Ticker, out var currentPrice);
                 return OpenTradeDTO.FromEntity(trade, currentPrice);
@@ -146,7 +146,7 @@ namespace Finsight.Services
 
             var closedTrades = await query.OrderByDescending(c => c.CloseTrade!.Date).ToListAsync();
 
-            return closedTrades.Select(c => 
+            return closedTrades.Select(c =>
             {
                 // Assuming all opening trades are BUY based on user request "Safe to assume there will never be Short trades"
                 var buyPrice = c.OpenTrade!.TradePrice;
@@ -154,12 +154,12 @@ namespace Finsight.Services
                 var quantity = c.OpenTrade.Quantity;
                 var totalComm = c.OpenTrade.Commission + c.CloseTrade.Commission;
 
-                return new ClosedTradeResponse 
+                return new ClosedTradeResponse
                 {
                     ClosedTradeId = c.Id,
                     Ticker = c.OpenTrade.Ticker,
-                    OpenDate = c.OpenTrade.Date,
-                    CloseDate = c.CloseTrade.Date,
+                    OpenDate = DateTime.SpecifyKind(c.OpenTrade.Date, DateTimeKind.Local).ToUniversalTime(),
+                    CloseDate = DateTime.SpecifyKind(c.CloseTrade.Date, DateTimeKind.Local).ToUniversalTime(),
                     Quantity = quantity,
                     OpenTradeQuantity = c.OpenTrade.Quantity,
                     ClosedTradeQuantity = c.CloseTrade.Quantity,
@@ -174,6 +174,7 @@ namespace Finsight.Services
 
         public async Task HandleTradeExecutionAsync(FSTrade trade)
         {
+
             _dbContext.FSTrades.Add(trade);
             await _dbContext.SaveChangesAsync();
 
@@ -199,16 +200,14 @@ namespace Finsight.Services
             if (trade.TradeDirection == TradeDirection.BUY)
             {
                 decimal targetSellPrice = trade.TradePrice + distance;
-               
+
                 await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.SELL, targetSellPrice, shares, config.LogsOnly);
-                
+
                 decimal targetBuyPrice = trade.TradePrice - distance;
                 await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, targetBuyPrice, shares, config.LogsOnly);
             }
             else // SELL
             {
-                decimal targetBuyPrice = trade.TradePrice - distance;
-                await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, targetBuyPrice, shares, config.LogsOnly);
 
                 // Get most recent open buy trade from the database
                 var mostRecentBuyTrade = await _dbContext.FSTrades
@@ -228,12 +227,13 @@ namespace Finsight.Services
                     }
                     else
                     {
-                        decimal nextSellPrice = mostRecentBuyTrade.TradePrice + distance;
-                        await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.SELL, nextSellPrice, shares, config.LogsOnly);
+                        await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, mostRecentBuyTrade.TradePrice - distance, shares, config.LogsOnly);
+                        await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.SELL, mostRecentBuyTrade.TradePrice + distance, shares, config.LogsOnly);
                     }
+
                 }
             }
-            
+
         }
         public async Task<FSTradingConfig?> GetTradingConfigAsync(string userId)
         {
@@ -243,7 +243,7 @@ namespace Finsight.Services
         public async Task<FSTradingConfig> UpdateTradingConfigAsync(string userId, Finsight.Commands.UpdateTradingConfigCommand dto)
         {
             var config = await _dbContext.TradingConfigs.FirstOrDefaultAsync(c => c.FSUserId == userId);
-            
+
             if (config == null)
             {
                 config = new FSTradingConfig
@@ -287,8 +287,8 @@ namespace Finsight.Services
                 throw new InvalidOperationException("Trades must be of the same ticker.");
             }
 
-            var alreadyMatched = await _dbContext.FSClosedTrades.AnyAsync(c => 
-                (c.OrderOpenId == command.BuyOrderId || c.OrderCloseId == command.BuyOrderId) || 
+            var alreadyMatched = await _dbContext.FSClosedTrades.AnyAsync(c =>
+                (c.OrderOpenId == command.BuyOrderId || c.OrderCloseId == command.BuyOrderId) ||
                 (c.OrderOpenId == command.SellOrderId || c.OrderCloseId == command.SellOrderId));
 
             if (alreadyMatched)
@@ -362,36 +362,14 @@ namespace Finsight.Services
             _dbContext.FSProfitDistributions.Add(distribution);
             await _dbContext.SaveChangesAsync();
 
-            if (command.Type == ProfitDistributionType.Withdrawal)
-            {
-                var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId);
-                var category = await _dbContext.Categories
-                    .FirstOrDefaultAsync(c => c.FSUserId == userId && c.Name.ToLower() == "business" && c.Type == FSTransactionType.income);
 
-
-               if (category != null)
-               {
-                 var transactionCommand = new Finsight.Commands.CreateTransactionCommand
-                {
-                    Amount = command.Amount,
-                    CategoryId = category.Id,
-                    Currency = "USD",
-                    Comment = "Trading",
-                    Type = FSTransactionType.income,
-                    Mode = FSTransactionMode.transfer,
-                    Date = DateOnly.FromDateTime(DateTime.UtcNow)
-                };
-
-                await _transactionService.AddTransactionWithFXAsync(transactionCommand, userId);
-               }
-            }
 
             _logger.LogInformation($"Recorded profit distribution of {command.Amount} for user {userId}.");
         }
 
         public async Task<decimal> GetAvailableBalanceAsync(string userId)
         {
-            
+
             var totalNetProfit = await _dbContext.FSClosedTrades
                 .Where(c => c.FSUserId == userId)
                 .SumAsync(c => c.NetProfit);

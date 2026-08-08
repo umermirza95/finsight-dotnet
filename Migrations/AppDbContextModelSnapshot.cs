@@ -53,7 +53,7 @@ namespace finsight_dotnet.Migrations
 
                     b.HasIndex("FSUserId");
 
-                    b.ToTable("FSBudgets");
+                    b.ToTable("FSBudgets", (string)null);
                 });
 
             modelBuilder.Entity("Finsight.Models.FSBudgetCategory", b =>
@@ -68,7 +68,7 @@ namespace finsight_dotnet.Migrations
 
                     b.HasIndex("CategoryId");
 
-                    b.ToTable("FSBudgetCategories");
+                    b.ToTable("FSBudgetCategories", (string)null);
                 });
 
             modelBuilder.Entity("Finsight.Models.FSBudgetPeriod", b =>
@@ -90,7 +90,7 @@ namespace finsight_dotnet.Migrations
 
                     b.HasIndex("BudgetId");
 
-                    b.ToTable("FSBudgetPeriods");
+                    b.ToTable("FSBudgetPeriods", (string)null);
                 });
 
             modelBuilder.Entity("Finsight.Models.FSCategory", b =>
@@ -115,7 +115,7 @@ namespace finsight_dotnet.Migrations
 
                     b.HasIndex("FSUserId");
 
-                    b.ToTable("Categories");
+                    b.ToTable("Categories", (string)null);
                 });
 
             modelBuilder.Entity("Finsight.Models.FSClosedTrade", b =>
@@ -147,7 +147,7 @@ namespace finsight_dotnet.Migrations
 
                     b.HasIndex("OrderOpenId");
 
-                    b.ToTable("FSClosedTrades");
+                    b.ToTable("FSClosedTrades", (string)null);
                 });
 
             modelBuilder.Entity("Finsight.Models.FSCurrency", b =>
@@ -189,7 +189,7 @@ namespace finsight_dotnet.Migrations
                     b.HasIndex("From", "To", "Date")
                         .IsUnique();
 
-                    b.ToTable("FSExchangeRates");
+                    b.ToTable("FSExchangeRates", (string)null);
                 });
 
             modelBuilder.Entity("Finsight.Models.FSFile", b =>
@@ -222,7 +222,7 @@ namespace finsight_dotnet.Migrations
 
                     b.HasIndex("FSUserId");
 
-                    b.ToTable("FSFiles");
+                    b.ToTable("FSFiles", (string)null);
                 });
 
             modelBuilder.Entity("Finsight.Models.FSImportedTransaction", b =>
@@ -273,7 +273,7 @@ namespace finsight_dotnet.Migrations
 
                     b.HasIndex("FSUserId");
 
-                    b.ToTable("FSImportedTransactions");
+                    b.ToTable("FSImportedTransactions", (string)null);
                 });
 
             modelBuilder.Entity("Finsight.Models.FSInsurancePayout", b =>
@@ -302,7 +302,7 @@ namespace finsight_dotnet.Migrations
 
                     b.HasIndex("FSUserId");
 
-                    b.ToTable("FSInsurancePayouts");
+                    b.ToTable("FSInsurancePayouts", (string)null);
                 });
 
             modelBuilder.Entity("Finsight.Models.FSProfitDistribution", b =>
@@ -329,7 +329,7 @@ namespace finsight_dotnet.Migrations
 
                     b.HasIndex("FSUserId");
 
-                    b.ToTable("FSProfitDistributions");
+                    b.ToTable("FSProfitDistributions", (string)null);
                 });
 
             modelBuilder.Entity("Finsight.Models.FSSubCategory", b =>
@@ -349,7 +349,7 @@ namespace finsight_dotnet.Migrations
 
                     b.HasIndex("FSCategoryId");
 
-                    b.ToTable("SubCategories");
+                    b.ToTable("SubCategories", (string)null);
                 });
 
             modelBuilder.Entity("Finsight.Models.FSTrade", b =>
@@ -393,7 +393,7 @@ namespace finsight_dotnet.Migrations
 
                     b.HasIndex("FSUserId");
 
-                    b.ToTable("FSTrades");
+                    b.ToTable("FSTrades", (string)null);
                 });
 
             modelBuilder.Entity("Finsight.Models.FSTradingConfig", b =>
@@ -433,7 +433,7 @@ namespace finsight_dotnet.Migrations
 
                     b.HasIndex("FSUserId");
 
-                    b.ToTable("TradingConfigs");
+                    b.ToTable("TradingConfigs", (string)null);
                 });
 
             modelBuilder.Entity("Finsight.Models.FSTransaction", b =>
@@ -490,7 +490,7 @@ namespace finsight_dotnet.Migrations
 
                     b.HasIndex("FSUserId");
 
-                    b.ToTable("Transactions");
+                    b.ToTable("Transactions", (string)null);
                 });
 
             modelBuilder.Entity("Finsight.Models.FSTransactionEmail", b =>
@@ -530,7 +530,7 @@ namespace finsight_dotnet.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("FSTransactionEmails");
+                    b.ToTable("FSTransactionEmails", (string)null);
                 });
 
             modelBuilder.Entity("Finsight.Models.FSTransactionSuggestion", b =>
@@ -591,7 +591,7 @@ namespace finsight_dotnet.Migrations
 
                     b.HasIndex("FSUserId");
 
-                    b.ToTable("FSTransactionSuggestions");
+                    b.ToTable("FSTransactionSuggestions", (string)null);
                 });
 
             modelBuilder.Entity("Finsight.Models.FSUser", b =>

@@ -8,7 +8,8 @@ namespace Finsight.Interfaces
 {
     public interface ITradingService
     {
-        Task FetchMonthlyTradesAsync(string userId);
+      
+        Task FetchTodayTradesAsync(string userId);
         Task MatchClosedTradesAsync(string userId);
         Task<List<OpenTradeDTO>> GetOpenTradesAsync(string userId);
         Task<List<ClosedTradeResponse>> GetClosedTradesAsync(string userId, GetTradesQuery query);

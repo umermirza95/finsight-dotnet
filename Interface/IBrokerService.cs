@@ -8,7 +8,8 @@ namespace Finsight.Interfaces
 {
     public interface IBrokerService
     {
-        Task FetchMonthlyTradesAsync(string userId);
+        
+        Task FetchTodayTradesAsync(string userId);
         bool IsConnected(string userId);
         void Connect(string host, int port, int clientId, string userId);
         void Disconnect(string userId);
