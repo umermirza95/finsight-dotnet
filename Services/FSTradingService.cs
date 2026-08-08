@@ -158,8 +158,8 @@ namespace Finsight.Services
                 {
                     ClosedTradeId = c.Id,
                     Ticker = c.OpenTrade.Ticker,
-                    OpenDate = DateTime.SpecifyKind(c.OpenTrade.Date, DateTimeKind.Local).ToUniversalTime(),
-                    CloseDate = DateTime.SpecifyKind(c.CloseTrade.Date, DateTimeKind.Local).ToUniversalTime(),
+                    OpenDate = c.OpenTrade.Date,
+                    CloseDate = c.CloseTrade.Date,
                     Quantity = quantity,
                     OpenTradeQuantity = c.OpenTrade.Quantity,
                     ClosedTradeQuantity = c.CloseTrade.Quantity,

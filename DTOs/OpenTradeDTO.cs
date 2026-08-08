@@ -26,7 +26,7 @@ namespace Finsight.DTOs
                 TradeDirection = trade.TradeDirection,
                 Quantity = trade.Quantity,
                 Commission = trade.Commission,
-                Date = DateTime.SpecifyKind(trade.Date, DateTimeKind.Local).ToUniversalTime(),
+                Date = trade.Date,
                 ExternalId = trade.ExternalId,
                 CurrentPrice = currentPrice
             };

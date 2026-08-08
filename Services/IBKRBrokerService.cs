@@ -229,11 +229,13 @@ namespace Finsight.Services
                     if (!string.IsNullOrEmpty(first.Execution.Time))
                     {
                         string timeStr = first.Execution.Time;
-                        if (DateTime.TryParseExact(timeStr, "yyyyMMdd  HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var pd))
+                        // Note: IBKR execution time can sometimes contain two spaces. 
+                        // The time is localized to the IB Gateway, so we assume local time and convert to UTC.
+                        if (DateTime.TryParseExact(timeStr, "yyyyMMdd  HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeLocal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var pd))
                         {
                             parsedDate = pd;
                         }
-                        else if (DateTime.TryParseExact(timeStr, "yyyyMMdd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var pd2))
+                        else if (DateTime.TryParseExact(timeStr, "yyyyMMdd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeLocal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var pd2))
                         {
                             parsedDate = pd2;
                         }
