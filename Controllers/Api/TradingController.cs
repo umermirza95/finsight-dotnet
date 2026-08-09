@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Finsight.Controller
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("[controller]")]
     [Authorize(AuthenticationSchemes = "JwtBearer")]
     public class TradingController : ControllerBase
     {

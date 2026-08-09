@@ -10,7 +10,7 @@ using Microsoft.IdentityModel.Tokens;
 namespace Finsight.Controller
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("[controller]")]
     public class AuthController : ControllerBase
     {
 

@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 namespace Finsight.Controller
 {
     [ApiController]
-    [Route("api/webhooks/bank-email")]
+    [Route("webhooks/bank-email")]
     public class WebhookEmailController(IDbContextFactory<AppDbContext> dbFactory, ILLMService llmService, ILogger<WebhookEmailController> logger, IServiceScopeFactory scopeFactory) : ControllerBase
     {
         private readonly IDbContextFactory<AppDbContext> _dbFactory = dbFactory;

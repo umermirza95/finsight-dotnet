@@ -9,7 +9,7 @@ using System.Security.Claims;
 namespace Finsight.Controllers.Api
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("[controller]")]
     [Authorize(AuthenticationSchemes = "JwtBearer")]
     public class ImportTransactionController : ControllerBase
     {
