@@ -360,9 +360,33 @@ namespace Finsight.Services
             };
 
             _dbContext.FSProfitDistributions.Add(distribution);
+
+            if (command.Type == Finsight.Enums.ProfitDistributionType.Withdrawal)
+            {
+                var category = await _dbContext.Categories
+                    .FirstOrDefaultAsync(c => c.FSUserId == userId && c.Name.ToLower() == "business");
+
+                if (category != null)
+                {
+                    var transaction = new FSTransaction
+                    {
+                        Id = Guid.NewGuid(),
+                        FSUserId = userId,
+                        Amount = command.Amount,
+                        FSCategoryId = category.Id,
+                        Mode = Finsight.Enums.FSTransactionMode.transfer,
+                        Date = DateOnly.FromDateTime(DateTime.UtcNow),
+                        UpdatedAt = DateTime.UtcNow,
+                        FSCurrencyCode = "USD",
+                        Type = Finsight.Enums.FSTransactionType.income,
+                        Comment = "trading"
+                    };
+
+                    _dbContext.Transactions.Add(transaction);
+                }
+            }
+
             await _dbContext.SaveChangesAsync();
-
-
 
             _logger.LogInformation($"Recorded profit distribution of {command.Amount} for user {userId}.");
         }
@@ -379,6 +403,72 @@ namespace Finsight.Services
                 .SumAsync(d => d.Amount);
 
             return totalNetProfit - totalDistributed;
+        }
+
+        public async Task<List<ProfitDistributionDTO>> GetProfitDistributionsAsync(string userId, GetProfitDistributionsQuery query)
+        {
+            var q = _dbContext.FSProfitDistributions.Where(d => d.FSUserId == userId);
+            
+            if (query.StartDate.HasValue)
+                q = q.Where(d => d.Date >= query.StartDate.Value);
+            
+            if (query.EndDate.HasValue)
+                q = q.Where(d => d.Date <= query.EndDate.Value);
+                
+            if (query.DistributionType.HasValue)
+                q = q.Where(d => d.DistributionType == query.DistributionType.Value);
+
+            var distributions = await q.OrderByDescending(d => d.Date).Take(10).ToListAsync();
+
+            return distributions.Select(d => new ProfitDistributionDTO
+            {
+                Id = d.Id,
+                Amount = d.Amount,
+                DistributionType = d.DistributionType,
+                Date = d.Date
+            }).ToList();
+        }
+
+        public async Task<List<InsurancePayoutDTO>> GetInsurancePayoutsAsync(string userId, GetInsurancePayoutsQuery query)
+        {
+            var q = _dbContext.FSInsurancePayouts
+                .Include(p => p.ClosedTrade)
+                    .ThenInclude(ct => ct.OpenTrade)
+                .Include(p => p.ClosedTrade)
+                    .ThenInclude(ct => ct.CloseTrade)
+                .Where(p => p.FSUserId == userId);
+                
+            if (query.StartDate.HasValue)
+                q = q.Where(p => p.CreatedAt >= query.StartDate.Value);
+                
+            if (query.EndDate.HasValue)
+                q = q.Where(p => p.CreatedAt <= query.EndDate.Value);
+
+            var payouts = await q.OrderByDescending(p => p.CreatedAt).Take(10).ToListAsync();
+
+            return payouts.Select(p => new InsurancePayoutDTO
+            {
+                Id = p.Id,
+                CoveredAmount = p.CoveredAmount,
+                ClosedTradeId = p.FSClosedTradeId,
+                Date = p.CreatedAt,
+                Ticker = p.ClosedTrade?.OpenTrade?.Ticker ?? "Unknown",
+                BuyPrice = p.ClosedTrade?.OpenTrade?.TradeDirection == TradeDirection.BUY ? (p.ClosedTrade?.OpenTrade?.TradePrice ?? 0) : (p.ClosedTrade?.CloseTrade?.TradePrice ?? 0),
+                SellPrice = p.ClosedTrade?.CloseTrade?.TradeDirection == TradeDirection.SELL ? (p.ClosedTrade?.CloseTrade?.TradePrice ?? 0) : (p.ClosedTrade?.OpenTrade?.TradePrice ?? 0)
+            }).ToList();
+        }
+
+        public async Task<decimal> GetInsuranceBalanceAsync(string userId)
+        {
+            var totalInsuranceFund = await _dbContext.FSProfitDistributions
+                .Where(d => d.FSUserId == userId && d.DistributionType == ProfitDistributionType.Insurance)
+                .SumAsync(d => d.Amount);
+
+            var totalPayouts = await _dbContext.FSInsurancePayouts
+                .Where(p => p.FSUserId == userId)
+                .SumAsync(p => p.CoveredAmount);
+
+            return totalInsuranceFund - totalPayouts;
         }
     }
 }

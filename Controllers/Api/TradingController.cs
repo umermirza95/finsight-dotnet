@@ -340,5 +340,56 @@ namespace Finsight.Controller
                 return StatusCode(500, new { error = ex.Message });
             }
         }
+
+        [HttpGet("profit-distributions")]
+        public async Task<IActionResult> GetProfitDistributionsAsync([FromQuery] GetProfitDistributionsQuery query)
+        {
+            try
+            {
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+                var distributions = await _tradingService.GetProfitDistributionsAsync(userId, query);
+                return Ok(distributions);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpGet("insurance-payouts")]
+        public async Task<IActionResult> GetInsurancePayoutsAsync([FromQuery] GetInsurancePayoutsQuery query)
+        {
+            try
+            {
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+                var payouts = await _tradingService.GetInsurancePayoutsAsync(userId, query);
+                return Ok(payouts);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpGet("insurance-balance")]
+        public async Task<IActionResult> GetInsuranceBalanceAsync()
+        {
+            try
+            {
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+                var balance = await _tradingService.GetInsuranceBalanceAsync(userId);
+                return Ok(new { insuranceBalance = balance });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
     }
 }

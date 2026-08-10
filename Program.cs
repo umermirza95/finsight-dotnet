@@ -116,7 +116,8 @@ app.UseCookiePolicy();
 app.UseCors("CorsPolicy");
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapControllers();
+//app.MapControllers();
+app.MapGroup("api").MapControllers();
 
 app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");
