@@ -3,13 +3,14 @@ using System.Threading.Tasks;
 
 using Finsight.Enums;
 using Finsight.DTOs;
+using Finsight.Models;
 
 namespace Finsight.Interfaces
 {
     public interface IBrokerService
     {
         
-        Task FetchTodayTradesAsync(string userId);
+        Task<List<FSTrade>> FetchTodayTradesAsync(string userId);
         bool IsConnected(string userId);
         void Connect(string host, int port, int clientId, string userId);
         void Disconnect(string userId);

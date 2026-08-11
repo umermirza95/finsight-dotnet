@@ -25,5 +25,23 @@ namespace Finsight.Models
         public decimal NetProfit { get; set; }
 
         public FSInsurancePayout? InsurancePayout { get; set; }
+
+        public void CalculateNetProfit(FSTrade openTrade, FSTrade closeTrade)
+        {
+            if (openTrade == null || closeTrade == null)
+            {
+                throw new ArgumentNullException("Both openTrade and closeTrade must be provided to calculate net profit.");
+            }
+
+            NetProfit = ((closeTrade.TradePrice - openTrade.TradePrice) * openTrade.Quantity) - (openTrade.Commission + closeTrade.Commission);
+        }
+
+        public void RecalculateNetProfit()
+        {
+            if (OpenTrade != null && CloseTrade != null)
+            {
+                CalculateNetProfit(OpenTrade, CloseTrade);
+            }
+        }
     }
 }

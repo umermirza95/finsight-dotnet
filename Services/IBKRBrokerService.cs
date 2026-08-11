@@ -182,13 +182,13 @@ namespace Finsight.Services
             _logger.LogInformation($"Requested cancel of order {permId}");
         }
 
-        public async Task FetchTodayTradesAsync(string userId)
+        public async Task<List<FSTrade>> FetchTodayTradesAsync(string userId)
         {
             var user = await _dbContext.Users.FindAsync(userId);
             if (user == null)
             {
                 _logger.LogWarning($"User {userId} not found.");
-                return;
+                return new List<FSTrade>();
             }
 
             var handler = _connectionManager.GetHandler(userId);
@@ -200,17 +200,9 @@ namespace Finsight.Services
 
             _logger.LogInformation("Fetching today's executions from IBKR via API.");
             var executionsData = await handler.GetExecutionsAsync();
-            var newTrades = new List<FSTrade>();
+            var fetchedTrades = new List<FSTrade>();
 
             var grouped = executionsData.GroupBy(e => e.Execution.PermId.ToString()).ToList();
-            var orderIds = grouped.Select(g => g.Key).ToList();
-
-            var existingTrades = await _dbContext.FSTrades
-                .Where(t => orderIds.Contains(t.ExternalId))
-                .ToListAsync();
-
-            var existingTradesDict = existingTrades.GroupBy(t => t.ExternalId).ToDictionary(g => g.Key, g => g.First());
-            var updatedTradesCount = 0;
 
             foreach (var group in grouped)
             {
@@ -243,47 +235,21 @@ namespace Finsight.Services
                 }
                 catch { }
 
-                if (existingTradesDict.TryGetValue(group.Key, out var existingTrade))
+                fetchedTrades.Add(new FSTrade
                 {
-                    existingTrade.Ticker = first.Contract.Symbol;
-                    existingTrade.TradePrice = vwap;
-                    existingTrade.TradeDirection = direction;
-                    existingTrade.Quantity = totalQty;
-                    existingTrade.Commission = totalComm;
-                    existingTrade.Date = parsedDate;
-                    updatedTradesCount++;
-                }
-                else
-                {
-                    newTrades.Add(new FSTrade
-                    {
-                        Id = Guid.NewGuid(),
-                        FSUserId = userId,
-                        Ticker = first.Contract.Symbol,
-                        TradePrice = vwap,
-                        TradeDirection = direction,
-                        Quantity = totalQty,
-                        Commission = totalComm,
-                        Date = parsedDate,
-                        ExternalId = group.Key
-                    });
-                }
+                    Id = Guid.NewGuid(),
+                    FSUserId = userId,
+                    Ticker = first.Contract.Symbol,
+                    TradePrice = vwap,
+                    TradeDirection = direction,
+                    Quantity = totalQty,
+                    Commission = totalComm,
+                    Date = parsedDate,
+                    ExternalId = group.Key
+                });
             }
 
-            if (newTrades.Any())
-            {
-                _dbContext.FSTrades.AddRange(newTrades);
-            }
-
-            if (newTrades.Any() || updatedTradesCount > 0)
-            {
-                await _dbContext.SaveChangesAsync();
-                _logger.LogInformation($"Inserted {newTrades.Count} new trades and updated {updatedTradesCount} existing trades from IBKR API for today.");
-            }
-            else
-            {
-                _logger.LogInformation("No new trades to insert or update from IBKR API for today.");
-            }
+            return fetchedTrades;
         }
     }
 }

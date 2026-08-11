@@ -26,7 +26,7 @@ namespace Finsight.Services
                 && t.Date >= query.From
                 && t.Date <= query.To
                 && (!query.Type.HasValue || t.Type == query.Type)
-                && (!query.CategoryId.HasValue || t.FSCategoryId == query.CategoryId)
+                && (query.CategoryIds == null || query.CategoryIds.Count == 0 || query.CategoryIds.Contains(t.FSCategoryId))
                 && (string.IsNullOrEmpty(query.SearchQuery) || EF.Functions.ILike(t.Comment!, $"%{query.SearchQuery}%"))
                 select new
                 {
@@ -91,8 +91,8 @@ namespace Finsight.Services
             if (query.Type != null)
                 q = q.Where(t => t.Type == query.Type);
 
-            if (query.CategoryId != null)
-                q = q.Where(t => t.FSCategoryId == query.CategoryId);
+            if (query.CategoryIds != null && query.CategoryIds.Any())
+                q = q.Where(t => query.CategoryIds.Contains(t.FSCategoryId));
 
             var result = await q
                 .OrderByDescending(t => t.Date)

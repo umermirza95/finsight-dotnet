@@ -8,7 +8,7 @@ namespace Finsight.Queries
         public DateOnly? From { get; set; }
         public DateOnly? To { get; set; }
         public FSTransactionType? Type { get; set; } // "income" or "expense"
-        public Guid? CategoryId { get; set; }
+        public List<Guid>? CategoryIds { get; set; } = new List<Guid>();
         public string? SearchQuery { get; set; } 
 
         public void ApplyDefaultDateRange()

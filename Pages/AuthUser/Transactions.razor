@@ -88,7 +88,7 @@
                                 <div>
                                     <label
                                     class="text-[11px] font-bold text-gray-400 uppercase tracking-widest ml-1">Category</label>
-                                    <select @bind="query.CategoryId"
+                                    <select @bind="singleCategoryId"
                                             class="w-full mt-1.5 p-3 bg-gray-50 border-2 border-transparent focus:border-gray-100 rounded-xl text-sm font-medium outline-none appearance-none cursor-pointer">
                                         <option value="">All Categories</option>
                                         @foreach (var cat in Categories)
@@ -215,6 +215,7 @@
     private decimal totalExpense => transactions?.Where(t => t.Type == FSTransactionType.expense).Sum(t => t.Amount) ?? 0;
     private bool isFilterOpen = false;
     private string? userId; // Store this globally for the component
+    private Guid? singleCategoryId;
     protected override async Task OnInitializedAsync()
     {
         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
@@ -234,6 +235,7 @@
     {
         if (!string.IsNullOrEmpty(userId))
         {
+            query.CategoryIds = singleCategoryId.HasValue ? new List<Guid> { singleCategoryId.Value } : new List<Guid>();
             // Note: We pass the query object which is now bound to the UI
             transactions = await TransactionService.GetTransactionsInDefaultCurrencyAsync(query, userId);
         }
@@ -251,6 +253,7 @@
     {
         query = new GetTransactionsQuery();
         query.ApplyDefaultDateRange();
+        singleCategoryId = null;
         isFilterOpen = false;
         await RefreshData();
     }
