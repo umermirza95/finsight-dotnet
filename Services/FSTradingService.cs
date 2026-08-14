@@ -34,7 +34,7 @@ namespace Finsight.Services
         public async Task FetchTodayTradesAsync(string userId)
         {
             var fetchedTrades = await _brokerService.FetchTodayTradesAsync(userId);
-            
+
             if (fetchedTrades == null || !fetchedTrades.Any())
                 return;
 
@@ -62,7 +62,7 @@ namespace Finsight.Services
                     existingTrade.Date = fetchedTrade.Date;
 
                     updatedTradesCount++;
-                    
+
                     if (existingTrade.TradeDirection == TradeDirection.SELL)
                     {
                         updatedSellOrderIds.Add(existingTrade.ExternalId);
@@ -83,7 +83,7 @@ namespace Finsight.Services
             {
                 await _dbContext.SaveChangesAsync();
                 _logger.LogInformation($"Inserted {newTrades.Count} new trades and updated {updatedTradesCount} existing trades for today for user {userId}.");
-                
+
                 if (updatedSellOrderIds.Any())
                 {
                     var closedTradesToUpdate = await _dbContext.FSClosedTrades
@@ -96,9 +96,12 @@ namespace Finsight.Services
                     {
                         foreach (var closedTrade in closedTradesToUpdate)
                         {
-                            closedTrade.RecalculateNetProfit();
+                            if (closedTrade.NetProfit > 0)
+                            {
+                                closedTrade.RecalculateNetProfit();
+                            }
                         }
-                        
+
                         await _dbContext.SaveChangesAsync();
                         _logger.LogInformation($"Recalculated net profit for {closedTradesToUpdate.Count} closed trades for user {userId}.");
                     }
@@ -303,7 +306,7 @@ namespace Finsight.Services
                     else
                     {
                         await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, mostRecentBuyTrade.TradePrice - distance, shares, config.LogsOnly);
-                        await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.SELL, mostRecentBuyTrade.TradePrice + distance, shares, config.LogsOnly);
+                        await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.SELL, mostRecentBuyTrade.TradePrice + distance, mostRecentBuyTrade.Quantity, config.LogsOnly);
                     }
 
                 }
@@ -483,13 +486,13 @@ namespace Finsight.Services
         public async Task<List<ProfitDistributionDTO>> GetProfitDistributionsAsync(string userId, GetProfitDistributionsQuery query)
         {
             var q = _dbContext.FSProfitDistributions.Where(d => d.FSUserId == userId);
-            
+
             if (query.StartDate.HasValue)
                 q = q.Where(d => d.Date >= query.StartDate.Value);
-            
+
             if (query.EndDate.HasValue)
                 q = q.Where(d => d.Date <= query.EndDate.Value);
-                
+
             if (query.DistributionType.HasValue)
                 q = q.Where(d => d.DistributionType == query.DistributionType.Value);
 
@@ -512,10 +515,10 @@ namespace Finsight.Services
                 .Include(p => p.ClosedTrade)
                     .ThenInclude(ct => ct.CloseTrade)
                 .Where(p => p.FSUserId == userId);
-                
+
             if (query.StartDate.HasValue)
                 q = q.Where(p => p.CreatedAt >= query.StartDate.Value);
-                
+
             if (query.EndDate.HasValue)
                 q = q.Where(p => p.CreatedAt <= query.EndDate.Value);
 
