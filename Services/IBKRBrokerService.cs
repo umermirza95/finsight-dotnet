@@ -71,7 +71,8 @@ namespace Finsight.Services
                 TotalQuantity = (double)quantity,
                 LmtPrice = (double)limitPrice,
                 Tif = "GTC",
-                OutsideRth = true
+                OutsideRth = true,
+                AllOrNone = true
             };
 
             // Hardcoded default account as requested

@@ -181,6 +181,7 @@ namespace Finsight.Services
         {
             var trades = await _dbContext.FSTrades
                 .Where(t => t.FSUserId == userId
+                && t.Ticker != "EUR"
                 && !_dbContext.FSClosedTrades.Any(c => c.OrderOpenId == t.ExternalId || c.OrderCloseId == t.ExternalId))
                 .OrderByDescending(t => t.Date)
                 .ToListAsync();
@@ -269,7 +270,7 @@ namespace Finsight.Services
             }
 
             decimal shares = config.SharesPerTranche;
-            decimal distance = config.DistancePerTranche;
+            decimal distancePercentage = config.DistancePerTranche / 100m;
 
             await _brokerService.CancelAllOrdersAsync(trade.FSUserId, config.LogsOnly);
 
@@ -277,11 +278,12 @@ namespace Finsight.Services
 
             if (trade.TradeDirection == TradeDirection.BUY)
             {
-                decimal targetSellPrice = trade.TradePrice + distance;
+                decimal distance = trade.TradePrice * distancePercentage;
+                decimal targetSellPrice = Math.Round(trade.TradePrice + distance, 2);
 
                 await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.SELL, targetSellPrice, shares, config.LogsOnly);
 
-                decimal targetBuyPrice = trade.TradePrice - distance;
+                decimal targetBuyPrice = Math.Round(trade.TradePrice - distance, 2);
                 await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, targetBuyPrice, shares, config.LogsOnly);
             }
             else // SELL
@@ -295,18 +297,23 @@ namespace Finsight.Services
 
                 if (mostRecentBuyTrade == null)
                 {
-                    await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, trade.TradePrice, shares, config.LogsOnly);
+                    await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, Math.Round(trade.TradePrice, 2), shares, config.LogsOnly);
                 }
                 else
                 {
+                    decimal distance = mostRecentBuyTrade.TradePrice * distancePercentage;
+
                     if (mostRecentBuyTrade.TradePrice - distance > trade.TradePrice)
                     {
-                        await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, trade.TradePrice, shares, config.LogsOnly);
+                        await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, Math.Round(trade.TradePrice, 2), shares, config.LogsOnly);
                     }
                     else
                     {
-                        await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, mostRecentBuyTrade.TradePrice - distance, shares, config.LogsOnly);
-                        await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.SELL, mostRecentBuyTrade.TradePrice + distance, mostRecentBuyTrade.Quantity, config.LogsOnly);
+                        decimal targetBuyPrice = Math.Round(mostRecentBuyTrade.TradePrice - distance, 2);
+                        decimal targetSellPrice = Math.Round(mostRecentBuyTrade.TradePrice + distance, 2);
+
+                        await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, targetBuyPrice, shares, config.LogsOnly);
+                        await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.SELL, targetSellPrice, mostRecentBuyTrade.Quantity, config.LogsOnly);
                     }
 
                 }
