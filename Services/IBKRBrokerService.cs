@@ -1,11 +1,11 @@
-
-using System.Xml.Linq;
+using System.Text;
+using System.Text.Json;
 using Finsight.Enums;
 using Finsight.Interfaces;
 using Finsight.Models;
-using IBApi;
 using Microsoft.EntityFrameworkCore;
 using Finsight.DTOs;
+using Finsight.Services.IBKR;
 
 namespace Finsight.Services
 {
@@ -15,12 +15,16 @@ namespace Finsight.Services
         private readonly AppDbContext _dbContext;
         private readonly IConfiguration _configuration;
         private readonly ILogger<IBKRBrokerService> _logger;
-        private readonly IBKR.IIBKRConnectionManager _connectionManager;
+        private readonly IIBKRConnectionManager _connectionManager;
         private readonly IMessagingService _messagingService;
 
-        public IBKRBrokerService(HttpClient httpClient, AppDbContext dbContext, IConfiguration configuration, ILogger<IBKRBrokerService> logger, IBKR.IIBKRConnectionManager connectionManager, IMessagingService messagingService)
+        public IBKRBrokerService(HttpClient httpClient, AppDbContext dbContext, IConfiguration configuration, ILogger<IBKRBrokerService> logger, IIBKRConnectionManager connectionManager, IMessagingService messagingService)
         {
             _httpClient = httpClient;
+            if (!_httpClient.DefaultRequestHeaders.Contains("User-Agent"))
+            {
+                _httpClient.DefaultRequestHeaders.Add("User-Agent", "Finsight/1.0");
+            }
             _dbContext = dbContext;
             _configuration = configuration;
             _logger = logger;
@@ -28,16 +32,35 @@ namespace Finsight.Services
             _messagingService = messagingService;
         }
 
-        public bool IsConnected(string userId) 
+        private async Task<string> GetBaseUrlAsync(string userId)
         {
-            var handler = _connectionManager.GetHandler(userId);
-            return handler != null && handler.Client.IsConnected();
+            var config = await _dbContext.TradingConfigs.FirstOrDefaultAsync(c => c.FSUserId == userId);
+            if (config != null && !string.IsNullOrEmpty(config.ServerIp))
+            {
+                var host = config.ServerIp;
+                var port = 7497;
+                if (config.ServerIp.Contains(':'))
+                {
+                    var parts = config.ServerIp.Split(':');
+                    host = parts[0];
+                    if (int.TryParse(parts[1], out int parsedPort))
+                        port = parsedPort;
+                }
+                return $"https://{host}:{port}";
+            }
+            return "https://localhost:5000"; // fallback
         }
 
-        public void Connect(string host, int port, int clientId, string userId)
+        public bool IsConnected(string userId)
+        {
+            var handler = _connectionManager.GetHandler(userId);
+            return handler != null && handler.IsConnected;
+        }
+
+        public async Task ConnectAsync(string host, int port, int clientId, string userId)
         {
             var handler = _connectionManager.GetOrCreateHandler(userId);
-            handler.Connect(host, port, clientId);
+            await handler.ConnectAsync(host, port);
         }
 
         public void Disconnect(string userId)
@@ -45,212 +68,364 @@ namespace Finsight.Services
             _connectionManager.RemoveHandler(userId);
         }
 
+        private async Task<int> GetConidAsync(string baseUrl, string ticker)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/v1/api/iserver/secdef/search");
+            request.Content = new StringContent(JsonSerializer.Serialize(new { symbol = ticker }), Encoding.UTF8, "application/json");
+
+            var response = await _httpClient.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+
+            var content = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(content);
+            if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
+            {
+                var first = doc.RootElement[0];
+                if (first.TryGetProperty("conid", out var conidProp))
+                {
+                    if (conidProp.ValueKind == JsonValueKind.Number)
+                        return conidProp.GetInt32();
+                    if (conidProp.ValueKind == JsonValueKind.String && int.TryParse(conidProp.GetString(), out int parsedConid))
+                        return parsedConid;
+                }
+            }
+            throw new Exception($"Could not find conid for ticker {ticker}");
+        }
+
         public async Task PlaceLimitOrderAsync(string userId, string ticker, TradeDirection direction, decimal limitPrice, decimal quantity, bool logsOnly, string? account = null)
         {
-            var handler = _connectionManager.GetHandler(userId);
-            if (handler == null || !handler.Client.IsConnected())
-                throw new Exception("IBKR is not connected.");
+            if (!IsConnected(userId))
+                throw new Exception("IBKR CP API is not connected.");
 
-            await _messagingService.SendMessageAsync($"*Action Intent*: Placing ${direction} limit order for {quantity} shares of {ticker} at ${limitPrice}.");
+            await _messagingService.SendMessageAsync($"*Action Intent*: Placing {direction} limit order for {quantity} shares of {ticker} at ${limitPrice}.");
 
-            if (logsOnly)
-                return;
+            if (logsOnly) return;
 
-            var contract = new Contract
+            string baseUrl = await GetBaseUrlAsync(userId);
+            string acc = !string.IsNullOrEmpty(account) ? account : "U7630023";
+
+            int conid = await GetConidAsync(baseUrl, ticker);
+            _logger.LogInformation($"Fetched conid {conid} for ticker {ticker}");
+
+            var orderPayload = new
             {
-                Symbol = ticker,
-                SecType = "STK",
-                Exchange = "SMART",
-                Currency = "USD"
+                orders = new[]
+                {
+                    new
+                    {
+                        conid = conid,
+                        secType = $"{conid}:STK",
+                        orderType = "LMT",
+                        price = (double)limitPrice,
+                        side = direction == TradeDirection.BUY ? "BUY" : "SELL",
+                        quantity = (double)quantity,
+                        tif = "GTC",
+                        outsideRTH = true,
+                        allOrNone = true
+                    }
+                }
             };
 
-            var order = new Order
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/v1/api/iserver/account/{acc}/orders");
+            request.Content = new StringContent(JsonSerializer.Serialize(orderPayload), Encoding.UTF8, "application/json");
+
+            var response = await _httpClient.SendAsync(request);
+            var responseContent = await response.Content.ReadAsStringAsync();
+
+            _logger.LogInformation($"Order placement response payload: {responseContent}");
+
+            if (!response.IsSuccessStatusCode)
             {
-                Action = direction == TradeDirection.BUY ? "BUY" : "SELL",
-                OrderType = "LMT",
-                TotalQuantity = (double)quantity,
-                LmtPrice = (double)limitPrice,
-                Tif = "GTC",
-                OutsideRth = true,
-                AllOrNone = true
-            };
+                _logger.LogError($"Failed to place order: {responseContent}");
+                throw new Exception($"Failed to place order: {responseContent}");
+            }
 
-            // Hardcoded default account as requested
-            order.Account = !string.IsNullOrEmpty(account) ? account : "U7630023";
+            // Handle IBKR two-step order confirmation (can prompt multiple times)
+            string currentContent = responseContent;
+            int maxPrompts = 3;
+            int promptCount = 0;
+            bool orderConfirmed = false;
+            string finalOrderId = "";
 
-            var orderId = handler.GetNextOrderId();
-            
-            // Set up the wait task before sending the order to avoid race conditions
-            var waitTask = handler.WaitForOrderPlacementAsync(orderId, TimeSpan.FromSeconds(10));
-            
-            handler.Client.placeOrder(orderId, contract, order);
+            while (promptCount < maxPrompts)
+            {
+                using var doc = JsonDocument.Parse(currentContent);
+                if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
+                {
+                    var first = doc.RootElement[0];
 
-            // Wait for confirmation or error from IBKR
-            await waitTask;
+                    // Check if it's a successful order placement
+                    if (first.TryGetProperty("order_id", out var orderIdProp))
+                    {
+                        finalOrderId = orderIdProp.ValueKind == JsonValueKind.Number ? orderIdProp.GetInt32().ToString() : (orderIdProp.GetString() ?? "");
+                        orderConfirmed = true;
+                        break;
+                    }
 
-            _logger.LogInformation($"Placed limit order {orderId} for {ticker} {direction} {quantity} @ {limitPrice}");
+                    // Check if it's a confirmation prompt
+                    if (first.TryGetProperty("id", out var idProp))
+                    {
+                        string replyId = idProp.GetString() ?? "";
+                        if (!string.IsNullOrEmpty(replyId))
+                        {
+                            promptCount++;
+                            _logger.LogInformation($"Order requires confirmation (Prompt {promptCount}). Auto-replying to ID: {replyId}");
+                            var replyPayload = new { confirmed = true };
+                            var replyRequest = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/v1/api/iserver/reply/{replyId}");
+                            replyRequest.Content = new StringContent(JsonSerializer.Serialize(replyPayload), Encoding.UTF8, "application/json");
+
+                            var replyResponse = await _httpClient.SendAsync(replyRequest);
+                            currentContent = await replyResponse.Content.ReadAsStringAsync();
+                            _logger.LogInformation($"Confirmation reply response: {currentContent}");
+                            continue;
+                        }
+                    }
+                    else if (first.TryGetProperty("error", out var errProp))
+                    {
+                        throw new Exception($"Order failed with IBKR error: {errProp.GetString()}");
+                    }
+                }
+                break;
+            }
+
+            if (!orderConfirmed)
+            {
+                _logger.LogError($"Order placement failed to confirm after {promptCount} prompts. Last response: {currentContent}");
+                throw new Exception($"Order placement failed to confirm. Last response: {currentContent}");
+            }
+
+            _logger.LogInformation($"Successfully placed limit order for {ticker} {direction} {quantity} @ {limitPrice}. Order ID: {finalOrderId}");
         }
 
         public async Task CancelAllOrdersAsync(string userId, bool logsOnly)
         {
             await _messagingService.SendMessageAsync("*Action Intent*: Canceling all open orders.");
-            if(logsOnly)
-                return;
+            if (logsOnly) return;
 
-            var handler = _connectionManager.GetHandler(userId);
-            if (handler == null || !handler.Client.IsConnected())
+            if (!IsConnected(userId))
                 throw new Exception("IBKR is not connected.");
 
+            string baseUrl = await GetBaseUrlAsync(userId);
 
-            handler.Client.reqGlobalCancel();
+            // Fetch all orders
+            var activeOrders = await GetActiveOrdersAsync(userId);
+            foreach (var order in activeOrders)
+            {
+                // Note: Getting account ID is typically required for canceling in CP API. Assuming default or config if needed.
+                string acc = "U7630023"; // Simplification for now
+                var request = new HttpRequestMessage(HttpMethod.Delete, $"{baseUrl}/v1/api/iserver/account/{acc}/order/{order.OrderId}");
+                await _httpClient.SendAsync(request);
+            }
+
             _logger.LogInformation("Requested global cancel of all open orders.");
         }
 
         public async Task<List<ActiveOrderDTO>> GetActiveOrdersAsync(string userId)
         {
-            var handler = _connectionManager.GetHandler(userId);
-            if (handler == null || !handler.Client.IsConnected())
+            if (!IsConnected(userId))
                 return new List<ActiveOrderDTO>();
 
-            // Trigger a refresh and wait for IBKR to send all open orders
-            var rawOrders = await handler.RefreshAndGetOpenOrdersAsync();
+            string baseUrl = await GetBaseUrlAsync(userId);
 
-            var openOrders = rawOrders.Select(o => new ActiveOrderDTO
+            // The 'filters' parameter expects specific statuses separated by commas
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/v1/api/iserver/account/orders?fFilters=Submitted");
+
+            var response = await _httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode) return new List<ActiveOrderDTO>();
+
+            var content = await response.Content.ReadAsStringAsync();
+            _logger.LogInformation($"GetActiveOrders response: {content}");
+
+            var ordersList = new List<ActiveOrderDTO>();
+
+            using var doc = JsonDocument.Parse(content);
+            JsonElement ordersArray;
+
+            if (doc.RootElement.ValueKind == JsonValueKind.Array)
             {
-                OrderId = o.OrderId,
-                Ticker = o.Contract.Symbol,
-                Action = o.Order.Action,
-                Quantity = (decimal)o.Order.TotalQuantity,
-                LimitPrice = (decimal)o.Order.LmtPrice
-            }).ToList();
+                ordersArray = doc.RootElement;
+            }
+            else if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("orders", out var ordersProp) && ordersProp.ValueKind == JsonValueKind.Array)
+            {
+                ordersArray = ordersProp;
+            }
+            else
+            {
+                return ordersList;
+            }
 
-            return openOrders;
+            foreach (var order in ordersArray.EnumerateArray())
+            {
+                string status = order.TryGetProperty("status", out var st) ? st.GetString() ?? "" : "";
+                if (status.Equals("Submitted", StringComparison.OrdinalIgnoreCase))
+                {
+                    ordersList.Add(new ActiveOrderDTO
+                    {
+                        OrderId = order.TryGetProperty("orderId", out var oid) ? (oid.ValueKind == JsonValueKind.Number ? oid.GetInt32() : int.Parse(oid.GetString() ?? "0")) : 0,
+                        Ticker = order.TryGetProperty("ticker", out var t) ? t.GetString() ?? "" : "",
+                        Action = order.TryGetProperty("side", out var s) ? s.GetString() ?? "" : "",
+                        Quantity = order.TryGetProperty("remainingQuantity", out var rq) ? GetDecimalSafe(rq) : 0m,
+                        LimitPrice = order.TryGetProperty("price", out var p) ? GetDecimalSafe(p) : 0m
+                    });
+                }
+
+
+            }
+
+            return ordersList;
         }
 
         public async Task AdjustOrderPriceAsync(string userId, int permId, decimal newPrice)
         {
-            var handler = _connectionManager.GetHandler(userId);
-            if (handler == null || !handler.Client.IsConnected())
+            if (!IsConnected(userId))
                 throw new Exception("IBKR is not connected.");
 
-            var openOrders = handler.GetOpenOrders();
-            var targetOrder = openOrders.FirstOrDefault(o => o.OrderId == permId); // Note: Tuple's OrderId field contains the PermId because of GetOpenOrders() mapping
+            string baseUrl = await GetBaseUrlAsync(userId);
+            string acc = "U7630023"; // Need account ID, defaulting
 
-            if (targetOrder.Order == null)
+            var payload = new
             {
-                throw new Exception($"Active order with PermId {permId} not found.");
-            }
+                price = (double)newPrice
+            };
 
-            if (targetOrder.Order.OrderId == 0)
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/v1/api/iserver/account/{acc}/order/{permId}");
+            request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+            var response = await _httpClient.SendAsync(request);
+            var responseContent = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
             {
-                throw new InvalidOperationException("Cannot adjust price of orders placed manually or externally. Only API-originated orders can be modified without binding.");
+                throw new Exception($"Failed to adjust order price: {responseContent}");
             }
-
-            targetOrder.Order.LmtPrice = (double)newPrice;
-            
-            var waitTask = handler.WaitForOrderPlacementAsync(targetOrder.Order.OrderId, TimeSpan.FromSeconds(10));
-            handler.Client.placeOrder(targetOrder.Order.OrderId, targetOrder.Contract, targetOrder.Order);
-            
-            // Wait for confirmation or error from IBKR
-            await waitTask;
         }
 
         public async Task CancelOrderAsync(string userId, int permId)
         {
-            var handler = _connectionManager.GetHandler(userId);
-            if (handler == null || !handler.Client.IsConnected())
+            if (!IsConnected(userId))
                 throw new Exception("IBKR is not connected.");
 
-            var openOrders = handler.GetOpenOrders();
-            var targetOrder = openOrders.FirstOrDefault(o => o.OrderId == permId);
+            string baseUrl = await GetBaseUrlAsync(userId);
+            string acc = "U7630023";
 
-            if (targetOrder.Order == null)
+            var request = new HttpRequestMessage(HttpMethod.Delete, $"{baseUrl}/v1/api/iserver/account/{acc}/order/{permId}");
+            var response = await _httpClient.SendAsync(request);
+            var responseContent = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
             {
-                throw new Exception($"Active order with PermId {permId} not found.");
+                throw new Exception($"Failed to cancel order: {responseContent}");
             }
 
-            if (targetOrder.Order.OrderId == 0)
-            {
-                throw new InvalidOperationException("Cannot cancel orders placed manually or externally. Only API-originated orders can be cancelled without binding.");
-            }
-
-            var waitTask = handler.WaitForOrderPlacementAsync(targetOrder.Order.OrderId, TimeSpan.FromSeconds(10));
-            handler.Client.cancelOrder(targetOrder.Order.OrderId);
-            
-            // Wait for confirmation or error from IBKR
-            await waitTask;
-            
             _logger.LogInformation($"Requested cancel of order {permId}");
         }
 
         public async Task<List<FSTrade>> FetchTodayTradesAsync(string userId)
         {
-            var user = await _dbContext.Users.FindAsync(userId);
-            if (user == null)
-            {
-                _logger.LogWarning($"User {userId} not found.");
-                return new List<FSTrade>();
-            }
 
-            var handler = _connectionManager.GetHandler(userId);
-            if (handler == null || !handler.Client.IsConnected())
+
+            if (!IsConnected(userId))
             {
                 _logger.LogWarning("Cannot fetch today's trades. IBKR is not connected.");
                 throw new Exception("IBKR is not connected.");
             }
 
-            _logger.LogInformation("Fetching today's executions from IBKR via API.");
-            var executionsData = await handler.GetExecutionsAsync();
+            string baseUrl = await GetBaseUrlAsync(userId);
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/v1/api/iserver/account/trades");
+            var response = await _httpClient.SendAsync(request);
+            var content = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new Exception($"Failed to fetch trades. API returned: {content}");
+            }
             var fetchedTrades = new List<FSTrade>();
 
-            var grouped = executionsData.GroupBy(e => e.Execution.PermId.ToString()).ToList();
-
-            foreach (var group in grouped)
+            using var doc = JsonDocument.Parse(content);
+            if (doc.RootElement.ValueKind == JsonValueKind.Array)
             {
-                var first = group.First();
-                var direction = (first.Execution.Side.Equals("BOT", StringComparison.OrdinalIgnoreCase) || first.Execution.Side.Equals("BUY", StringComparison.OrdinalIgnoreCase)) 
-                    ? TradeDirection.BUY : TradeDirection.SELL;
+                var requiredProps = new[] { "side", "symbol", "price", "size", "commission", "order_id", "trade_time" };
 
-                var totalQty = group.Sum(x => (decimal)x.Execution.Shares);
-                var totalValue = group.Sum(x => (decimal)x.Execution.Shares * (decimal)x.Execution.Price);
-                var vwap = totalQty > 0 ? totalValue / totalQty : (decimal)first.Execution.Price;
-                var totalComm = group.Sum(x => (decimal)(x.Commission?.Commission ?? 0));
-
-                DateTime parsedDate = DateTime.UtcNow;
-                try
+                foreach (var tradeItem in doc.RootElement.EnumerateArray())
                 {
-                    if (!string.IsNullOrEmpty(first.Execution.Time))
+                    foreach (var prop in requiredProps)
                     {
-                        string timeStr = first.Execution.Time;
-                        // Note: IBKR execution time can sometimes contain two spaces. 
-                        // The time is localized to the IB Gateway, so we assume local time and convert to UTC.
-                        if (DateTime.TryParseExact(timeStr, "yyyyMMdd  HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeLocal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var pd))
+                        if (!tradeItem.TryGetProperty(prop, out var element) || element.ValueKind == JsonValueKind.Null)
                         {
-                            parsedDate = pd;
-                        }
-                        else if (DateTime.TryParseExact(timeStr, "yyyyMMdd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeLocal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var pd2))
-                        {
-                            parsedDate = pd2;
+                            throw new Exception($"Trade item is missing required property: '{prop}'");
                         }
                     }
-                }
-                catch { }
 
-                fetchedTrades.Add(new FSTrade
-                {
-                    Id = Guid.NewGuid(),
-                    FSUserId = userId,
-                    Ticker = first.Contract.Symbol,
-                    TradePrice = vwap,
-                    TradeDirection = direction,
-                    Quantity = totalQty,
-                    Commission = totalComm,
-                    Date = parsedDate,
-                    ExternalId = group.Key
-                });
+                    string side = tradeItem.GetProperty("side").GetString()!;
+                    var direction = (side.Equals("B", StringComparison.OrdinalIgnoreCase) || side.Equals("BOT", StringComparison.OrdinalIgnoreCase) || side.Equals("BUY", StringComparison.OrdinalIgnoreCase))
+                        ? TradeDirection.BUY : TradeDirection.SELL;
+
+                    string ticker = tradeItem.GetProperty("symbol").GetString()!;
+                    decimal tradePrice = GetDecimalSafe(tradeItem.GetProperty("price"));
+                    decimal quantity = GetDecimalSafe(tradeItem.GetProperty("size"));
+                    decimal commission = GetDecimalSafe(tradeItem.GetProperty("commission"));
+                    var orderIdProp = tradeItem.GetProperty("order_id");
+                    string externalId = orderIdProp.ValueKind == JsonValueKind.Number
+                        ? orderIdProp.GetInt64().ToString()
+                        : orderIdProp.GetString()!;
+
+                    string timeStr = tradeItem.GetProperty("trade_time").GetString()!;
+                    if (!DateTime.TryParseExact(timeStr, "yyyyMMdd-HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var tradeTimeUtc))
+                    {
+                        throw new Exception($"Could not parse trade_time '{timeStr}'.");
+                    }
+
+                    if (tradeTimeUtc.Date < DateTime.UtcNow.Date)
+                    {
+                        continue;
+                    }
+
+                    fetchedTrades.Add(new FSTrade
+                    {
+                        Id = Guid.NewGuid(),
+                        FSUserId = userId,
+                        Ticker = ticker,
+                        TradePrice = tradePrice,
+                        TradeDirection = direction,
+                        Quantity = quantity,
+                        Commission = commission,
+                        Date = tradeTimeUtc,
+                        ExternalId = externalId
+                    });
+                }
             }
 
-            return fetchedTrades;
+            var mergedTrades = fetchedTrades
+                .GroupBy(t => t.ExternalId)
+                .Select(g =>
+                {
+                    var totalQuantity = g.Sum(t => t.Quantity);
+                    var totalCommission = g.Sum(t => t.Commission);
+                    var vwap = g.Sum(t => t.TradePrice * t.Quantity) / totalQuantity;
+
+                    var firstTrade = g.First();
+                    return new FSTrade
+                    {
+                        Id = Guid.NewGuid(),
+                        FSUserId = firstTrade.FSUserId,
+                        Ticker = firstTrade.Ticker,
+                        TradePrice = vwap,
+                        TradeDirection = firstTrade.TradeDirection,
+                        Quantity = totalQuantity,
+                        Commission = totalCommission,
+                        Date = g.Max(t => t.Date),
+                        ExternalId = firstTrade.ExternalId
+                    };
+                })
+                .ToList();
+
+            return mergedTrades;
+        }
+        private decimal GetDecimalSafe(JsonElement element)
+        {
+            if (element.ValueKind == JsonValueKind.Number) return element.GetDecimal();
+            if (element.ValueKind == JsonValueKind.String && decimal.TryParse(element.GetString(), out decimal d)) return d;
+            return 0m;
         }
     }
 }

@@ -119,7 +119,7 @@ namespace Finsight.Controller
                         }
                     }
 
-                    brokerService.Connect(host, port, 1234, userId);
+                    await brokerService.ConnectAsync(host, port, 1234, userId);
                 }
                 else
                 {

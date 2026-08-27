@@ -46,6 +46,7 @@ namespace Finsight.Services.IBKR
             if (_handlers.TryRemove(userId, out var handler))
             {
                 handler.Disconnect();
+                handler.Dispose();
             }
         }
     }

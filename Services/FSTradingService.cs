@@ -34,41 +34,23 @@ namespace Finsight.Services
         public async Task FetchTodayTradesAsync(string userId)
         {
             var fetchedTrades = await _brokerService.FetchTodayTradesAsync(userId);
-
             if (fetchedTrades == null || !fetchedTrades.Any())
                 return;
 
             var orderIds = fetchedTrades.Select(t => t.ExternalId).ToList();
 
-            var existingTrades = await _dbContext.FSTrades
+            var existingTradeIds = await _dbContext.FSTrades
                 .Where(t => t.FSUserId == userId && orderIds.Contains(t.ExternalId))
+                .Select(t => t.ExternalId)
                 .ToListAsync();
 
-            var existingTradesDict = existingTrades.GroupBy(t => t.ExternalId).ToDictionary(g => g.Key, g => g.First());
+            var existingTradesSet = new HashSet<string>(existingTradeIds);
 
             var newTrades = new List<FSTrade>();
-            var updatedTradesCount = 0;
-            var updatedSellOrderIds = new List<string>();
 
             foreach (var fetchedTrade in fetchedTrades)
             {
-                if (existingTradesDict.TryGetValue(fetchedTrade.ExternalId, out var existingTrade))
-                {
-                    existingTrade.Ticker = fetchedTrade.Ticker;
-                    existingTrade.TradePrice = fetchedTrade.TradePrice;
-                    existingTrade.TradeDirection = fetchedTrade.TradeDirection;
-                    existingTrade.Quantity = fetchedTrade.Quantity;
-                    existingTrade.Commission = fetchedTrade.Commission;
-                    existingTrade.Date = fetchedTrade.Date;
-
-                    updatedTradesCount++;
-
-                    if (existingTrade.TradeDirection == TradeDirection.SELL)
-                    {
-                        updatedSellOrderIds.Add(existingTrade.ExternalId);
-                    }
-                }
-                else
+                if (!existingTradesSet.Contains(fetchedTrade.ExternalId))
                 {
                     newTrades.Add(fetchedTrade);
                 }
@@ -77,39 +59,12 @@ namespace Finsight.Services
             if (newTrades.Any())
             {
                 _dbContext.FSTrades.AddRange(newTrades);
-            }
-
-            if (newTrades.Any() || updatedTradesCount > 0)
-            {
                 await _dbContext.SaveChangesAsync();
-                _logger.LogInformation($"Inserted {newTrades.Count} new trades and updated {updatedTradesCount} existing trades for today for user {userId}.");
-
-                if (updatedSellOrderIds.Any())
-                {
-                    var closedTradesToUpdate = await _dbContext.FSClosedTrades
-                        .Include(c => c.OpenTrade)
-                        .Include(c => c.CloseTrade)
-                        .Where(c => c.FSUserId == userId && updatedSellOrderIds.Contains(c.OrderCloseId))
-                        .ToListAsync();
-
-                    if (closedTradesToUpdate.Any())
-                    {
-                        foreach (var closedTrade in closedTradesToUpdate)
-                        {
-                            if (closedTrade.NetProfit > 0)
-                            {
-                                closedTrade.RecalculateNetProfit();
-                            }
-                        }
-
-                        await _dbContext.SaveChangesAsync();
-                        _logger.LogInformation($"Recalculated net profit for {closedTradesToUpdate.Count} closed trades for user {userId}.");
-                    }
-                }
+                _logger.LogInformation($"Inserted {newTrades.Count} new trades for today for user {userId}.");
             }
             else
             {
-                _logger.LogInformation($"No new trades to insert or update for today for user {userId}.");
+                _logger.LogInformation($"No new trades to insert for today for user {userId}.");
             }
         }
 

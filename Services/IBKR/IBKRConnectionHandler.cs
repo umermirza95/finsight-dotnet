@@ -1,33 +1,27 @@
-using IBApi;
-using Microsoft.EntityFrameworkCore;
+using System.Net.WebSockets;
+using System.Text;
+using System.Text.Json;
+using System.Collections.Concurrent;
+using Microsoft.Extensions.DependencyInjection;
 using Finsight.Interfaces;
+using Finsight.Models;
+using Finsight.Enums;
 
 namespace Finsight.Services.IBKR
 {
-    public class IBKRConnectionHandler : DefaultEWrapper
+    public class IBKRConnectionHandler : IDisposable
     {
         private readonly ILogger<IBKRConnectionHandler> _logger;
-        private EClientSocket _clientSocket;
-        private EReaderSignal _signal;
-        private int _nextOrderId;
-        
-        public EClientSocket Client => _clientSocket;
-        
         private readonly IServiceScopeFactory _scopeFactory;
-        private readonly System.Collections.Concurrent.ConcurrentDictionary<int, (Contract Contract, Order Order)> _openOrders = new();
-        private readonly System.Collections.Concurrent.ConcurrentDictionary<int, TaskCompletionSource<bool>> _pendingOrders = new();
         private readonly IMessagingService _messagingService;
-        private TaskCompletionSource<bool>? _openOrdersTcs;
-        
-        private readonly System.Collections.Concurrent.ConcurrentDictionary<int, TaskCompletionSource<IEnumerable<(Contract Contract, Execution Execution, CommissionReport? Commission)>>> _pendingExecutions = new();
-        private readonly System.Collections.Concurrent.ConcurrentDictionary<int, List<(Contract Contract, Execution Execution)>> _executionsData = new();
-        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CommissionReport> _commissionReports = new();
-        private int _nextReqId = 1;
+        private readonly string _userId;
+        private ClientWebSocket? _webSocket;
+        private readonly HttpClient _httpClient;
         
         private bool _isConnected;
-        public bool IsConnected => _isConnected && _clientSocket.IsConnected();
+        public bool IsConnected => _isConnected && _webSocket?.State == WebSocketState.Open;
 
-        private readonly string _userId;
+        private CancellationTokenSource _cts = new();
 
         public IBKRConnectionHandler(ILogger<IBKRConnectionHandler> logger, IServiceScopeFactory scopeFactory, IMessagingService messagingService, string userId)
         {
@@ -35,255 +29,240 @@ namespace Finsight.Services.IBKR
             _scopeFactory = scopeFactory;
             _messagingService = messagingService;
             _userId = userId;
-            _signal = new EReaderMonitorSignal();
-            _clientSocket = new EClientSocket(this, _signal);
+
+            // Optional: allow untrusted certs for local CP API gateway
+            var handler = new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true
+            };
+            _httpClient = new HttpClient(handler);
+            _httpClient.DefaultRequestHeaders.Add("User-Agent", "Finsight/1.0");
         }
 
-        public void Connect(string host, int port, int clientId)
+        public async Task ConnectAsync(string host, int port)
         {
             if (IsConnected)
             {
-                _logger.LogInformation("Already connected to IBKR.");
+                _logger.LogInformation("Already connected to IBKR REST API WebSocket.");
                 return;
             }
 
-            _logger.LogInformation($"Connecting to IBKR at {host}:{port} with ClientId {clientId}");
-            _clientSocket.eConnect(host, port, clientId);
-            
-            var reader = new EReader(_clientSocket, _signal);
-            reader.Start();
+            string baseUrl = $"https://{host}:{port}";
+            _httpClient.BaseAddress = new Uri(baseUrl);
 
-            new Thread(() =>
+            try
             {
-                while (_clientSocket.IsConnected())
+                _cts = new CancellationTokenSource();
+                _webSocket = new ClientWebSocket();
+                
+                // Allow untrusted certs for local gateway websocket
+                _webSocket.Options.RemoteCertificateValidationCallback = (sender, cert, chain, errors) => true;
+
+                // 1. Check if authenticated
+                var authResponse = await _httpClient.GetAsync("/v1/api/iserver/auth/status");
+                if (!authResponse.IsSuccessStatusCode)
                 {
-                    _signal.waitForSignal();
-                    reader.processMsgs();
+                    _logger.LogWarning($"Failed to check IBKR CP API auth status. Status: {authResponse.StatusCode}");
+                    throw new Exception($"Authentication failed or gateway is not reachable. Status: {authResponse.StatusCode}");
                 }
-            }) { IsBackground = true }.Start();
-            _messagingService.SendMessageAsync($"*IBKR Connection Established*: Connected to IBKR at {host}:{port} with ClientId {clientId}").Wait();
+
+                // 2. Set active account for the session
+                var accountsResponse = await _httpClient.GetAsync("/v1/api/portfolio/accounts");
+                if (accountsResponse.IsSuccessStatusCode)
+                {
+                    var accountsContent = await accountsResponse.Content.ReadAsStringAsync();
+                    using var accountsDoc = System.Text.Json.JsonDocument.Parse(accountsContent);
+                    if (accountsDoc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array && accountsDoc.RootElement.GetArrayLength() > 0)
+                    {
+                        var acc = accountsDoc.RootElement[0].GetProperty("accountId").GetString() ?? "U7630023";
+                        var accPayload = new { acctId = acc };
+                        var setAccReq = new HttpRequestMessage(HttpMethod.Post, "/v1/api/iserver/account");
+                        setAccReq.Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(accPayload), Encoding.UTF8, "application/json");
+                        await _httpClient.SendAsync(setAccReq);
+                        _logger.LogInformation($"Selected active session account: {acc}");
+                    }
+                }
+
+                // 2. Connect to WebSocket
+                string wsUrl = $"wss://{host}:{port}/v1/api/ws";
+                _logger.LogInformation($"Connecting to IBKR WebSocket at {wsUrl}");
+                
+                await _webSocket.ConnectAsync(new Uri(wsUrl), _cts.Token);
+                _isConnected = true;
+                
+                await _messagingService.SendMessageAsync($"*IBKR Connection Established*: Connected to CP API at {baseUrl}");
+
+                // 3. Start receive loop
+                _ = ReceiveLoopAsync();
+                
+                // 4. Start keep-alive loop (ping/tickle)
+                _ = KeepAliveLoopAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to connect to IBKR CP API");
+                _isConnected = false;
+                throw;
+            }
         }
 
         public void Disconnect()
         {
-            if (_clientSocket.IsConnected())
+            if (_isConnected)
             {
-                _logger.LogInformation("Disconnecting from IBKR.");
-                _clientSocket.eDisconnect();
+                _logger.LogInformation("Disconnecting from IBKR CP API.");
+                _cts.Cancel();
+                
+                if (_webSocket != null && _webSocket.State == WebSocketState.Open)
+                {
+                    _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Disconnecting", CancellationToken.None).Wait(2000);
+                }
+                
+                _webSocket?.Dispose();
             }
             _isConnected = false;
         }
 
-        public int GetNextOrderId()
+        private async Task KeepAliveLoopAsync()
         {
-            return _nextOrderId++;
-        }
-
-        public IEnumerable<(int OrderId, Contract Contract, Order Order)> GetOpenOrders()
-        {
-            return _openOrders.Select(kv => (kv.Key, kv.Value.Contract, kv.Value.Order));
-        }
-
-        public Task WaitForOrderPlacementAsync(int orderId, TimeSpan timeout)
-        {
-            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            _pendingOrders[orderId] = tcs;
-
-            var cts = new CancellationTokenSource(timeout);
-            cts.Token.Register(() => 
+            try
             {
-                if (_pendingOrders.TryRemove(orderId, out var pendingTcs))
+                while (!_cts.IsCancellationRequested && IsConnected)
                 {
-                    pendingTcs.TrySetException(new TimeoutException("Order placement timed out waiting for IBKR confirmation."));
-                }
-            });
-
-            return tcs.Task;
-        }
-
-        public async Task<IEnumerable<(int OrderId, Contract Contract, Order Order)>> RefreshAndGetOpenOrdersAsync()
-        {
-            _openOrdersTcs = new TaskCompletionSource<bool>();
-            _openOrders.Clear();
-            
-            _clientSocket.reqAllOpenOrders();
-            
-            var fetchTask = _openOrdersTcs.Task;
-            if (await Task.WhenAny(fetchTask, Task.Delay(5000)) != fetchTask)
-            {
-                _logger.LogWarning("Timeout waiting for open orders from IBKR.");
-            }
-            
-            return GetOpenOrders();
-        }
-
-        public Task<IEnumerable<(Contract Contract, Execution Execution, CommissionReport? Commission)>> GetExecutionsAsync()
-        {
-            var reqId = Interlocked.Increment(ref _nextReqId);
-            var tcs = new TaskCompletionSource<IEnumerable<(Contract Contract, Execution Execution, CommissionReport? Commission)>>(TaskCreationOptions.RunContinuationsAsynchronously);
-            _pendingExecutions[reqId] = tcs;
-            _executionsData[reqId] = new List<(Contract Contract, Execution Execution)>();
-
-            _clientSocket.reqExecutions(reqId, new ExecutionFilter());
-
-            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-            cts.Token.Register(() => 
-            {
-                if (_pendingExecutions.TryRemove(reqId, out var pendingTcs))
-                {
-                    _executionsData.TryRemove(reqId, out _);
-                    pendingTcs.TrySetException(new TimeoutException("Timeout waiting for executions from IBKR."));
-                }
-            });
-
-            return tcs.Task;
-        }
-
-        public override void nextValidId(int orderId)
-        {
-            _isConnected = true;
-            _nextOrderId = orderId;
-            _logger.LogInformation($"Next valid order ID: {orderId}");
-            //_clientSocket.reqAutoOpenOrders(true); // Automatically bind manual/mobile orders to this client ID to receive their execution events
-            _clientSocket.reqAllOpenOrders(); // Required to populate _openOrders so we know the Contract and Order Action
-        }
-
-        public override void execDetails(int reqId, Contract contract, Execution execution)
-        {
-            // Execution object only contains Cumulative Quantity and specific Execution Shares, but no Remaining Quantity.
-            // We log the fill here but handle the trading logic in orderStatus where we have the 'remaining' field.
-            _logger.LogInformation($"Execution Details: OrderId={execution.OrderId}, ExecId={execution.ExecId}, Symbol={contract.Symbol}, Side={execution.Side}, Shares={execution.Shares}, Price={execution.Price}");
-            
-            if (_executionsData.TryGetValue(reqId, out var list))
-            {
-                lock (list)
-                {
-                    list.Add((contract, execution));
-                }
-            }
-        }
-
-        public override void commissionReport(CommissionReport commissionReport)
-        {
-            _logger.LogInformation($"CommissionReport: ExecId={commissionReport.ExecId}, Commission={commissionReport.Commission}");
-            _commissionReports[commissionReport.ExecId] = commissionReport;
-        }
-
-        public override void execDetailsEnd(int reqId)
-        {
-            _logger.LogInformation($"Execution Details End for ReqId={reqId}");
-            if (_pendingExecutions.TryRemove(reqId, out var tcs))
-            {
-                if (_executionsData.TryRemove(reqId, out var data))
-                {
-                    var result = data.Select(d => 
+                    await Task.Delay(TimeSpan.FromMinutes(1), _cts.Token);
+                    
+                    // Call tickle to maintain session
+                    try
                     {
-                        _commissionReports.TryGetValue(d.Execution.ExecId, out var cr);
-                        return (d.Contract, d.Execution, cr);
-                    }).ToList();
-                    tcs.TrySetResult(result);
-                }
-                else
-                {
-                    tcs.TrySetResult(new List<(Contract Contract, Execution Execution, CommissionReport? Commission)>());
-                }
-            }
-        }
-
-        public override void orderStatus(int orderId, string status, double filled, double remaining, double avgFillPrice, int permId, int parentId, double lastFillPrice, int clientId, string whyHeld, double mktCapPrice)
-        {
-            if (_pendingOrders.TryRemove(orderId, out var tcs))
-            {
-                tcs.TrySetResult(true);
-            }
-
-            _logger.LogInformation($"OrderStatus: OrderId={orderId}, PermId={permId}, Status={status}, Filled={filled}, Remaining={remaining}");
-            
-            if (status == "Filled" || remaining == 0)
-            {
-                if (_openOrders.TryGetValue(permId, out var orderInfo))
-                {
-                    Task.Run(async () => 
-                    {
-                        using var scope = _scopeFactory.CreateScope();
-                        var tradingService = scope.ServiceProvider.GetRequiredService<Finsight.Interfaces.ITradingService>();
-                        var messagingService = scope.ServiceProvider.GetRequiredService<Finsight.Interfaces.IMessagingService>();
-                        var direction = orderInfo.Order.Action.Equals("BOT", StringComparison.OrdinalIgnoreCase) || orderInfo.Order.Action.Equals("BUY", StringComparison.OrdinalIgnoreCase) 
-                                        ? Finsight.Enums.TradeDirection.BUY : Finsight.Enums.TradeDirection.SELL;
-                        
-                        await messagingService.SendMessageAsync($"*Order Executed (IBKR)*: {orderInfo.Order.Action} {filled} shares of {orderInfo.Contract.Symbol} at Avg Price ${avgFillPrice} ID: {permId} {parentId}");
-                        
-                        var now = DateTime.UtcNow;
-                        var trade = new Finsight.Models.FSTrade
+                        var content = new StringContent("{}", Encoding.UTF8, "application/json");
+                        var response = await _httpClient.PostAsync("/v1/api/tickle", content, _cts.Token);
+                        if (!response.IsSuccessStatusCode)
                         {
-                            Id = Guid.NewGuid(),
-                            FSUserId = _userId,
-                            Ticker = orderInfo.Contract.Symbol,
-                            TradeDirection = direction,
-                            TradePrice = (decimal)avgFillPrice,
-                            Quantity = (decimal)filled,
-                            Date = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, now.Second, DateTimeKind.Utc),
-                            ExternalId = permId.ToString(),
-                            Commission = 1
-                        };
-                        
-                        await tradingService.HandleTradeExecutionAsync(trade);
-                    });
-                    _openOrders.TryRemove(permId, out _);
+                            _logger.LogWarning("IBKR Tickle failed.");
+                            Disconnect();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Error during IBKR tickle");
+                        Disconnect();
+                    }
                 }
-                else
+            }
+            catch (TaskCanceledException) { }
+        }
+
+        private async Task ReceiveLoopAsync()
+        {
+            var buffer = new byte[8192];
+
+            try
+            {
+                while (_webSocket?.State == WebSocketState.Open && !_cts.IsCancellationRequested)
                 {
-                    _logger.LogWarning($"Order with PermId {permId} was completely filled, but its details were not found in local cache.");
+                    var result = await _webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), _cts.Token);
+                    
+                    if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        _logger.LogWarning("IBKR WebSocket closed by server.");
+                        Disconnect();
+                        break;
+                    }
+
+                    if (result.MessageType == WebSocketMessageType.Text)
+                    {
+                        var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                        ProcessWebSocketMessage(message);
+                    }
                 }
             }
-            else if (status == "Cancelled" || status == "Inactive")
+            catch (Exception ex) when (ex is not TaskCanceledException)
             {
-                _openOrders.TryRemove(permId, out _);
+                _logger.LogError(ex, "Error receiving IBKR WebSocket message.");
+                Disconnect();
             }
         }
 
-        public override void openOrder(int orderId, Contract contract, Order order, OrderState orderState)
+        private void ProcessWebSocketMessage(string message)
         {
-            _openOrders[order.PermId] = (contract, order);
-            _logger.LogInformation($"Open Order: PermId={order.PermId} {order.Action} {order.TotalQuantity} {contract.Symbol} @ {order.LmtPrice}");
+            try
+            {
+                using var document = JsonDocument.Parse(message);
+                var root = document.RootElement;
+
+                if (root.TryGetProperty("topic", out var topicProp))
+                {
+                    string topic = topicProp.GetString() ?? "";
+
+                    // Execution reports
+                    if (topic == "trd" && root.TryGetProperty("args", out var args))
+                    {
+                        foreach (var arg in args.EnumerateArray())
+                        {
+                            HandleTradeExecutionEvent(arg);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Failed to process websocket message: {message}");
+            }
+        }
+
+        private void HandleTradeExecutionEvent(JsonElement executionArgs)
+        {
+            // Sample execution payload:
+            // { "executionId": "...", "symbol": "AAPL", "side": "BOT", "size": 100.0, "price": 140.23, "time": "20231010-14:22:30", "commission": 1.0, "conid": 265598 }
             
-            if (_pendingOrders.TryRemove(orderId, out var tcs))
+            try
             {
-                tcs.TrySetResult(true);
+                string symbol = executionArgs.TryGetProperty("symbol", out var sym) ? sym.GetString() ?? "" : "";
+                string side = executionArgs.TryGetProperty("side", out var s) ? s.GetString() ?? "" : "";
+                decimal size = executionArgs.TryGetProperty("size", out var sz) ? sz.GetDecimal() : 0m;
+                decimal price = executionArgs.TryGetProperty("price", out var p) ? p.GetDecimal() : 0m;
+                decimal commission = executionArgs.TryGetProperty("commission", out var c) ? c.GetDecimal() : 0m;
+                string executionId = executionArgs.TryGetProperty("executionId", out var eid) ? eid.GetString() ?? Guid.NewGuid().ToString() : Guid.NewGuid().ToString();
+
+                var direction = (side.Equals("BOT", StringComparison.OrdinalIgnoreCase) || side.Equals("BUY", StringComparison.OrdinalIgnoreCase)) 
+                                ? TradeDirection.BUY : TradeDirection.SELL;
+
+                Task.Run(async () => 
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    var tradingService = scope.ServiceProvider.GetRequiredService<ITradingService>();
+                    var messagingService = scope.ServiceProvider.GetRequiredService<IMessagingService>();
+                    
+                    await messagingService.SendMessageAsync($"*Order Executed (IBKR REST)*: {side} {size} shares of {symbol} at Avg Price ${price} ID: {executionId}");
+                    
+                    var now = DateTime.UtcNow;
+                    var trade = new FSTrade
+                    {
+                        Id = Guid.NewGuid(),
+                        FSUserId = _userId,
+                        Ticker = symbol,
+                        TradeDirection = direction,
+                        TradePrice = price,
+                        Quantity = size,
+                        Date = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, now.Second, DateTimeKind.Utc),
+                        ExternalId = executionId, // We use execution ID here as we might not have the parent Order ID easily accessible
+                        Commission = commission
+                    };
+                    
+                    await tradingService.HandleTradeExecutionAsync(trade);
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to parse trade execution event.");
             }
         }
 
-        public override void openOrderEnd()
+        public void Dispose()
         {
-            _logger.LogInformation("Finished receiving open orders.");
-            _openOrdersTcs?.TrySetResult(true);
-        }
-
-        public override void connectionClosed()
-        {
-            _isConnected = false;
-            _logger.LogWarning("IBKR Connection Closed.");
-        }
-
-        public override void error(int id, int errorCode, string errorMsg)
-        {
-            _logger.LogError($"IBKR Error [{errorCode}]: {errorMsg}");
-            
-            if (id != -1 && _pendingOrders.TryRemove(id, out var tcs))
-            {
-                tcs.TrySetException(new Exception($"IBKR Error [{errorCode}]: {errorMsg}"));
-            }
-            
-            // 504: Not connected, 1100: Connectivity between IB and TWS has been lost, 2110: Connectivity between IB and TWS has been lost
-            if (errorCode == 504 || errorCode == 1100 || errorCode == 2110)
-            {
-                _isConnected = false;
-            }
-            // 1101, 1102: Connectivity restored
-            else if (errorCode == 1101 || errorCode == 1102)
-            {
-                _isConnected = true;
-            }
+            _cts.Cancel();
+            _webSocket?.Dispose();
+            _httpClient?.Dispose();
         }
     }
 }
