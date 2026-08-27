@@ -22,5 +22,7 @@ namespace Finsight.Interfaces
         Task<List<ProfitDistributionDTO>> GetProfitDistributionsAsync(string userId, GetProfitDistributionsQuery query);
         Task<List<InsurancePayoutDTO>> GetInsurancePayoutsAsync(string userId, GetInsurancePayoutsQuery query);
         Task<decimal> GetInsuranceBalanceAsync(string userId);
+        Task<decimal> ReconcileBalanceWithBrokerAsync(string userId);
+        Task<decimal> GetTotalCapitalAsync(string userId);
     }
 }

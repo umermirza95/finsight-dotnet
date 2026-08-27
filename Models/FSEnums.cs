@@ -37,6 +37,7 @@ namespace Finsight.Enums
     public enum ProfitDistributionType
     {
         Insurance,
-        Withdrawal
+        Withdrawal,
+        Reinvestment
     }
 }

@@ -391,5 +391,21 @@ namespace Finsight.Controller
                 return StatusCode(500, new { error = ex.Message });
             }
         }
+        [HttpGet("reconcile")]
+        public async Task<IActionResult> GetReconciliationAsync()
+        {
+            try
+            {
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+                var difference = await _tradingService.ReconcileBalanceWithBrokerAsync(userId);
+                return Ok(new { difference = difference });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
     }
 }

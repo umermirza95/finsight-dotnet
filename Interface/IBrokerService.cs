@@ -19,5 +19,6 @@ namespace Finsight.Interfaces
         Task AdjustOrderPriceAsync(string userId, int permId, decimal newPrice);
         Task CancelOrderAsync(string userId, int permId);
         Task CancelAllOrdersAsync(string userId, bool logsOnly);
+        Task<decimal> GetUninvestedCashAsync(string userId);
     }
 }

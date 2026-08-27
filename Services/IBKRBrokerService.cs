@@ -421,6 +421,33 @@ namespace Finsight.Services
 
             return mergedTrades;
         }
+
+        public async Task<decimal> GetUninvestedCashAsync(string userId)
+        {
+
+            string baseUrl = await GetBaseUrlAsync(userId);
+            string acc = "U7630023"; 
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/v1/api/portfolio/{acc}/ledger");
+            var response = await _httpClient.SendAsync(request);
+            var content = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new Exception($"Failed to fetch ledger. API returned: {content}");
+            }
+
+            using var doc = JsonDocument.Parse(content);
+            if (doc.RootElement.TryGetProperty("BASE", out var baseElement))
+            {
+                if (baseElement.TryGetProperty("settledcash", out var cashbalanceElement))
+                {
+                    return GetDecimalSafe(cashbalanceElement);
+                }
+            }
+
+            throw new Exception("Could not find cashbalance in the ledger response.");
+        }
+
         private decimal GetDecimalSafe(JsonElement element)
         {
             if (element.ValueKind == JsonValueKind.Number) return element.GetDecimal();

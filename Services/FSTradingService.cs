@@ -433,16 +433,18 @@ namespace Finsight.Services
 
         public async Task<decimal> GetAvailableBalanceAsync(string userId)
         {
+            var balances = await _dbContext.Users
+                .Where(u => u.Id == userId)
+                .Select(u => new
+                {
+                    TotalNetProfit = _dbContext.FSClosedTrades.Where(c => c.FSUserId == userId).Sum(c => (decimal?)c.NetProfit) ?? 0,
+                    TotalDistributed = _dbContext.FSProfitDistributions.Where(d => d.FSUserId == userId).Sum(d => (decimal?)d.Amount) ?? 0
+                })
+                .FirstOrDefaultAsync();
 
-            var totalNetProfit = await _dbContext.FSClosedTrades
-                .Where(c => c.FSUserId == userId)
-                .SumAsync(c => c.NetProfit);
+            if (balances == null) return 0;
 
-            var totalDistributed = await _dbContext.FSProfitDistributions
-                .Where(d => d.FSUserId == userId)
-                .SumAsync(d => d.Amount);
-
-            return totalNetProfit - totalDistributed;
+            return balances.TotalNetProfit - balances.TotalDistributed;
         }
 
         public async Task<List<ProfitDistributionDTO>> GetProfitDistributionsAsync(string userId, GetProfitDistributionsQuery query)
@@ -500,15 +502,52 @@ namespace Finsight.Services
 
         public async Task<decimal> GetInsuranceBalanceAsync(string userId)
         {
-            var totalInsuranceFund = await _dbContext.FSProfitDistributions
-                .Where(d => d.FSUserId == userId && d.DistributionType == ProfitDistributionType.Insurance)
-                .SumAsync(d => d.Amount);
+            var balances = await _dbContext.Users
+                .Where(u => u.Id == userId)
+                .Select(u => new
+                {
+                    TotalInsuranceFund = _dbContext.FSProfitDistributions.Where(d => d.FSUserId == userId && d.DistributionType == ProfitDistributionType.Insurance).Sum(d => (decimal?)d.Amount) ?? 0,
+                    TotalPayouts = _dbContext.FSInsurancePayouts.Where(p => p.FSUserId == userId).Sum(p => (decimal?)p.CoveredAmount) ?? 0
+                })
+                .FirstOrDefaultAsync();
 
-            var totalPayouts = await _dbContext.FSInsurancePayouts
-                .Where(p => p.FSUserId == userId)
-                .SumAsync(p => p.CoveredAmount);
+            if (balances == null) return 0;
 
-            return totalInsuranceFund - totalPayouts;
+            return balances.TotalInsuranceFund - balances.TotalPayouts;
+        }
+
+        public async Task<decimal> GetTotalCapitalAsync(string userId)
+        {
+            var capitals = await _dbContext.Users
+                .Where(u => u.Id == userId)
+                .Select(u => new
+                {
+                    TotalCapitalInjected = _dbContext.FSInjectedCapitals.Where(c => c.FSUserId == userId).Sum(c => (decimal?)c.Amount) ?? 0,
+                    TotalProfitReinvested = _dbContext.FSProfitDistributions.Where(d => d.FSUserId == userId && d.DistributionType == ProfitDistributionType.Reinvestment).Sum(d => (decimal?)d.Amount) ?? 0
+                })
+                .FirstOrDefaultAsync();
+
+            if (capitals == null) return 0;
+
+            return capitals.TotalCapitalInjected + capitals.TotalProfitReinvested;
+        }
+
+        public async Task<decimal> ReconcileBalanceWithBrokerAsync(string userId)
+        {
+            var uninvestedCash = await _brokerService.GetUninvestedCashAsync(userId);
+            var profitForDistribution = await GetAvailableBalanceAsync(userId);
+            var amountForInsurance = await GetInsuranceBalanceAsync(userId);
+            var totalCapital = await GetTotalCapitalAsync(userId);
+
+            var openBuyTrades = await _dbContext.FSTrades
+                .Where(t => t.FSUserId == userId && t.TradeDirection == TradeDirection.BUY && !_dbContext.FSClosedTrades.Any(c => c.OrderOpenId == t.ExternalId))
+                .ToListAsync();
+
+            var totalCapitalDeployed = openBuyTrades.Sum(t => (t.Quantity * t.TradePrice) + t.Commission);
+
+            var expectedCash = profitForDistribution + amountForInsurance + (totalCapital - totalCapitalDeployed);
+
+            return uninvestedCash - expectedCash;
         }
     }
 }
