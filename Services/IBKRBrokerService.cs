@@ -93,6 +93,48 @@ namespace Finsight.Services
             throw new Exception($"Could not find conid for ticker {ticker}");
         }
 
+        private async Task<string> HandleOrderResponseAsync(string baseUrl, string initialResponseContent)
+        {
+            string currentContent = initialResponseContent;
+            int maxPrompts = 3;
+            int promptCount = 0;
+
+            while (promptCount < maxPrompts)
+            {
+                using var doc = JsonDocument.Parse(currentContent);
+                bool promptFound = false;
+
+                if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
+                {
+                    var first = doc.RootElement[0];
+                    if (first.TryGetProperty("id", out var idProp))
+                    {
+                        string replyId = idProp.GetString() ?? "";
+                        if (!string.IsNullOrEmpty(replyId))
+                        {
+                            promptFound = true;
+                            promptCount++;
+                            _logger.LogInformation($"Order requires confirmation (Prompt {promptCount}). Auto-replying to ID: {replyId}");
+                            var replyPayload = new { confirmed = true };
+                            var replyRequest = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/v1/api/iserver/reply/{replyId}");
+                            replyRequest.Content = new StringContent(JsonSerializer.Serialize(replyPayload), Encoding.UTF8, "application/json");
+
+                            var replyResponse = await _httpClient.SendAsync(replyRequest);
+                            currentContent = await replyResponse.Content.ReadAsStringAsync();
+                            _logger.LogInformation($"Confirmation reply response: {currentContent}");
+                        }
+                    }
+                }
+
+                if (!promptFound)
+                {
+                    break;
+                }
+            }
+
+            return currentContent;
+        }
+
         public async Task PlaceLimitOrderAsync(string userId, string ticker, TradeDirection direction, decimal limitPrice, decimal quantity, bool logsOnly, string? account = null)
         {
             if (!IsConnected(userId))
@@ -141,58 +183,37 @@ namespace Finsight.Services
                 throw new Exception($"Failed to place order: {responseContent}");
             }
 
-            // Handle IBKR two-step order confirmation (can prompt multiple times)
-            string currentContent = responseContent;
-            int maxPrompts = 3;
-            int promptCount = 0;
-            bool orderConfirmed = false;
+            var finalContent = await HandleOrderResponseAsync(baseUrl, responseContent);
+
             string finalOrderId = "";
+            bool orderConfirmed = false;
 
-            while (promptCount < maxPrompts)
+            using var doc = JsonDocument.Parse(finalContent);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object)
             {
-                using var doc = JsonDocument.Parse(currentContent);
-                if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
+                if (doc.RootElement.TryGetProperty("error", out var errProp))
                 {
-                    var first = doc.RootElement[0];
-
-                    // Check if it's a successful order placement
-                    if (first.TryGetProperty("order_id", out var orderIdProp))
-                    {
-                        finalOrderId = orderIdProp.ValueKind == JsonValueKind.Number ? orderIdProp.GetInt32().ToString() : (orderIdProp.GetString() ?? "");
-                        orderConfirmed = true;
-                        break;
-                    }
-
-                    // Check if it's a confirmation prompt
-                    if (first.TryGetProperty("id", out var idProp))
-                    {
-                        string replyId = idProp.GetString() ?? "";
-                        if (!string.IsNullOrEmpty(replyId))
-                        {
-                            promptCount++;
-                            _logger.LogInformation($"Order requires confirmation (Prompt {promptCount}). Auto-replying to ID: {replyId}");
-                            var replyPayload = new { confirmed = true };
-                            var replyRequest = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/v1/api/iserver/reply/{replyId}");
-                            replyRequest.Content = new StringContent(JsonSerializer.Serialize(replyPayload), Encoding.UTF8, "application/json");
-
-                            var replyResponse = await _httpClient.SendAsync(replyRequest);
-                            currentContent = await replyResponse.Content.ReadAsStringAsync();
-                            _logger.LogInformation($"Confirmation reply response: {currentContent}");
-                            continue;
-                        }
-                    }
-                    else if (first.TryGetProperty("error", out var errProp))
-                    {
-                        throw new Exception($"Order failed with IBKR error: {errProp.GetString()}");
-                    }
+                    throw new Exception($"IBKR Order Error: {errProp.GetString()}");
                 }
-                break;
+            }
+            else if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
+            {
+                var first = doc.RootElement[0];
+                if (first.TryGetProperty("order_id", out var orderIdProp))
+                {
+                    finalOrderId = orderIdProp.ValueKind == JsonValueKind.Number ? orderIdProp.GetInt32().ToString() : (orderIdProp.GetString() ?? "");
+                    orderConfirmed = true;
+                }
+                else if (first.TryGetProperty("error", out var errProp))
+                {
+                    throw new Exception($"Order failed with IBKR error: {errProp.GetString()}");
+                }
             }
 
             if (!orderConfirmed)
             {
-                _logger.LogError($"Order placement failed to confirm after {promptCount} prompts. Last response: {currentContent}");
-                throw new Exception($"Order placement failed to confirm. Last response: {currentContent}");
+                _logger.LogError($"Order placement failed to confirm. Last response: {finalContent}");
+                throw new Exception($"Order placement failed to confirm. Last response: {finalContent}");
             }
 
             _logger.LogInformation($"Successfully placed limit order for {ticker} {direction} {quantity} @ {limitPrice}. Order ID: {finalOrderId}");
@@ -234,10 +255,7 @@ namespace Finsight.Services
             if (!response.IsSuccessStatusCode) return new List<ActiveOrderDTO>();
 
             var content = await response.Content.ReadAsStringAsync();
-            _logger.LogInformation($"GetActiveOrders response: {content}");
-
             var ordersList = new List<ActiveOrderDTO>();
-
             using var doc = JsonDocument.Parse(content);
             JsonElement ordersArray;
 
@@ -298,31 +316,42 @@ namespace Finsight.Services
             var response = await _httpClient.SendAsync(request);
             var responseContent = await response.Content.ReadAsStringAsync();
             
-            using var doc = JsonDocument.Parse(responseContent);
-            if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
+            if (!response.IsSuccessStatusCode && string.IsNullOrWhiteSpace(responseContent))
             {
-                var first = doc.RootElement[0];
-                if (first.TryGetProperty("error", out var errProp))
-                {
-                    throw new Exception($"IBKR Error adjusting order price: {errProp.GetString()}");
-                }
+                throw new Exception($"Failed to adjust order price. HTTP {(int)response.StatusCode}");
             }
-            else if (doc.RootElement.ValueKind == JsonValueKind.Object)
+
+            var finalContent = await HandleOrderResponseAsync(baseUrl, responseContent);
+
+            bool orderConfirmed = false;
+
+            using var doc = JsonDocument.Parse(finalContent);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object)
             {
                 if (doc.RootElement.TryGetProperty("error", out var errProp))
                 {
                     throw new Exception($"IBKR Error adjusting order price: {errProp.GetString()}");
                 }
             }
+            else if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
+            {
+                var first = doc.RootElement[0];
+                if (first.TryGetProperty("order_id", out var orderIdProp))
+                {
+                    orderConfirmed = true;
+                }
+                else if (first.TryGetProperty("error", out var errProp))
+                {
+                    throw new Exception($"IBKR Error adjusting order price: {errProp.GetString()}");
+                }
+            }
 
-            if (!response.IsSuccessStatusCode)
+            if (!orderConfirmed)
             {
-                throw new Exception($"Failed to adjust order price: {responseContent}");
+                throw new Exception($"Failed to adjust order price: {finalContent}");
             }
-            else
-            {
-                _logger.LogInformation($"Order price adjusted successfully.  {responseContent}");
-            }
+
+            _logger.LogInformation($"Order price adjusted successfully. Order ID: {command.OrderId}");
         }
 
         public async Task CancelOrderAsync(string userId, int permId)

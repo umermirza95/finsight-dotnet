@@ -125,12 +125,18 @@ namespace Finsight.Services.IBKR
                 _logger.LogInformation("Disconnecting from IBKR CP API.");
                 _cts.Cancel();
                 
-                if (_webSocket != null && _webSocket.State == WebSocketState.Open)
+                try
                 {
-                    _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Disconnecting", CancellationToken.None).Wait(2000);
+                    if (_webSocket != null && _webSocket.State == WebSocketState.Open)
+                    {
+                        _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Disconnecting", CancellationToken.None).Wait(2000);
+                    }
+                    _webSocket?.Dispose();
                 }
-                
-                _webSocket?.Dispose();
+                catch (Exception)
+                {
+                    // Ignore exceptions during abrupt websocket closure
+                }
             }
             _isConnected = false;
         }
@@ -174,19 +180,14 @@ namespace Finsight.Services.IBKR
                 while (_webSocket?.State == WebSocketState.Open && !_cts.IsCancellationRequested)
                 {
                     var result = await _webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), _cts.Token);
-                    
+                    var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
                         _logger.LogWarning("IBKR WebSocket closed by server.");
                         Disconnect();
                         break;
                     }
-
-                    if (result.MessageType == WebSocketMessageType.Text)
-                    {
-                        var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                        ProcessWebSocketMessage(message);
-                    }
+                    ProcessWebSocketMessage(message);
                 }
             }
             catch (Exception ex) when (ex is not TaskCanceledException)
@@ -198,21 +199,31 @@ namespace Finsight.Services.IBKR
 
         private void ProcessWebSocketMessage(string message)
         {
+           
             try
             {
+                _logger.LogInformation($"Received WebSocket message: {message}");
                 using var document = JsonDocument.Parse(message);
                 var root = document.RootElement;
 
                 if (root.TryGetProperty("topic", out var topicProp))
                 {
                     string topic = topicProp.GetString() ?? "";
-
+                     
                     // Execution reports
                     if (topic == "str" && root.TryGetProperty("args", out var args))
                     {
                         foreach (var arg in args.EnumerateArray())
                         {
                             HandleTradeExecutionEvent(arg);
+                        }
+                    }
+                    else if (topic == "sts" && root.TryGetProperty("args", out var argsSts))
+                    {
+                        if (argsSts.TryGetProperty("authenticated", out var authProp) && authProp.ValueKind == JsonValueKind.False)
+                        {
+                            _logger.LogWarning("IBKR WebSocket session is no longer authenticated. Disconnecting...");
+                            Disconnect();
                         }
                     }
                 }
