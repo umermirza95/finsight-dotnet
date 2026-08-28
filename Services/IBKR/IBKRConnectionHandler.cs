@@ -1,8 +1,7 @@
+using System.Net;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
-using System.Collections.Concurrent;
-using Microsoft.Extensions.DependencyInjection;
 using Finsight.Interfaces;
 using Finsight.Models;
 using Finsight.Enums;
@@ -17,6 +16,7 @@ namespace Finsight.Services.IBKR
         private readonly string _userId;
         private ClientWebSocket? _webSocket;
         private readonly HttpClient _httpClient;
+        private readonly CookieContainer _cookieContainer = new CookieContainer();
         
         private bool _isConnected;
         public bool IsConnected => _isConnected && _webSocket?.State == WebSocketState.Open;
@@ -33,7 +33,9 @@ namespace Finsight.Services.IBKR
             // Optional: allow untrusted certs for local CP API gateway
             var handler = new HttpClientHandler
             {
-                ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true
+                ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true,
+                CookieContainer = _cookieContainer,
+                UseCookies = true
             };
             _httpClient = new HttpClient(handler);
             _httpClient.DefaultRequestHeaders.Add("User-Agent", "Finsight/1.0");
@@ -48,7 +50,10 @@ namespace Finsight.Services.IBKR
             }
 
             string baseUrl = $"https://{host}:{port}";
-            _httpClient.BaseAddress = new Uri(baseUrl);
+            if (_httpClient.BaseAddress == null)
+            {
+                _httpClient.BaseAddress = new Uri(baseUrl);
+            }
 
             try
             {
@@ -57,6 +62,7 @@ namespace Finsight.Services.IBKR
                 
                 // Allow untrusted certs for local gateway websocket
                 _webSocket.Options.RemoteCertificateValidationCallback = (sender, cert, chain, errors) => true;
+                _webSocket.Options.Cookies = _cookieContainer;
 
                 // 1. Check if authenticated
                 var authResponse = await _httpClient.GetAsync("/v1/api/iserver/auth/status");
@@ -91,6 +97,12 @@ namespace Finsight.Services.IBKR
                 _isConnected = true;
                 
                 await _messagingService.SendMessageAsync($"*IBKR Connection Established*: Connected to CP API at {baseUrl}");
+
+                // Subscribe to real-time trade updates
+                var subPayload = "str+{\"realtimeUpdatesOnly\":true}";
+                var subBytes = Encoding.UTF8.GetBytes(subPayload);
+                await _webSocket.SendAsync(new ArraySegment<byte>(subBytes), WebSocketMessageType.Text, true, _cts.Token);
+                _logger.LogInformation("Sent subscription for real-time trades on WebSocket.");
 
                 // 3. Start receive loop
                 _ = ReceiveLoopAsync();
@@ -141,6 +153,7 @@ namespace Finsight.Services.IBKR
                             _logger.LogWarning("IBKR Tickle failed.");
                             Disconnect();
                         }
+                        _logger.LogInformation("IBKR Tickle successful.");
                     }
                     catch (Exception ex)
                     {
@@ -195,7 +208,7 @@ namespace Finsight.Services.IBKR
                     string topic = topicProp.GetString() ?? "";
 
                     // Execution reports
-                    if (topic == "trd" && root.TryGetProperty("args", out var args))
+                    if (topic == "str" && root.TryGetProperty("args", out var args))
                     {
                         foreach (var arg in args.EnumerateArray())
                         {
@@ -212,17 +225,52 @@ namespace Finsight.Services.IBKR
 
         private void HandleTradeExecutionEvent(JsonElement executionArgs)
         {
-            // Sample execution payload:
-            // { "executionId": "...", "symbol": "AAPL", "side": "BOT", "size": 100.0, "price": 140.23, "time": "20231010-14:22:30", "commission": 1.0, "conid": 265598 }
-            
+            _logger.LogInformation($"Trade execution payload: {executionArgs.GetRawText()}");
             try
             {
-                string symbol = executionArgs.TryGetProperty("symbol", out var sym) ? sym.GetString() ?? "" : "";
-                string side = executionArgs.TryGetProperty("side", out var s) ? s.GetString() ?? "" : "";
-                decimal size = executionArgs.TryGetProperty("size", out var sz) ? sz.GetDecimal() : 0m;
-                decimal price = executionArgs.TryGetProperty("price", out var p) ? p.GetDecimal() : 0m;
-                decimal commission = executionArgs.TryGetProperty("commission", out var c) ? c.GetDecimal() : 0m;
-                string executionId = executionArgs.TryGetProperty("executionId", out var eid) ? eid.GetString() ?? Guid.NewGuid().ToString() : Guid.NewGuid().ToString();
+                var requiredProps = new[] { "symbol", "side", "size", "price" };
+                foreach (var prop in requiredProps)
+                {
+                    if (!executionArgs.TryGetProperty(prop, out var element) || element.ValueKind == JsonValueKind.Null)
+                    {
+                        throw new Exception($"Trade execution is missing required property: '{prop}'");
+                    }
+                }
+
+                string symbol = executionArgs.GetProperty("symbol").GetString() ?? throw new Exception("symbol cannot be null");
+                string side = executionArgs.GetProperty("side").GetString() ?? throw new Exception("side cannot be null");
+                
+                var sizeProp = executionArgs.GetProperty("size");
+                decimal size = sizeProp.ValueKind == JsonValueKind.Number ? sizeProp.GetDecimal() : decimal.Parse(sizeProp.GetString()!);
+                
+                var priceProp = executionArgs.GetProperty("price");
+                decimal price = priceProp.ValueKind == JsonValueKind.Number ? priceProp.GetDecimal() : decimal.Parse(priceProp.GetString()!);
+                
+                decimal commission = 0m;
+                if (executionArgs.TryGetProperty("commission", out var cProp) && cProp.ValueKind != JsonValueKind.Null)
+                {
+                    commission = cProp.ValueKind == JsonValueKind.Number ? cProp.GetDecimal() : decimal.Parse(cProp.GetString()!);
+                }
+                
+                string executionId = "";
+                if (executionArgs.TryGetProperty("executionId", out var execIdProp) && execIdProp.ValueKind != JsonValueKind.Null)
+                    executionId = execIdProp.GetString() ?? "";
+                else if (executionArgs.TryGetProperty("execution_id", out var execIdSnakeProp) && execIdSnakeProp.ValueKind != JsonValueKind.Null)
+                    executionId = execIdSnakeProp.GetString() ?? "";
+                else
+                    throw new Exception("executionId or execution_id cannot be null");
+
+                string orderId = "";
+                if (executionArgs.TryGetProperty("order_id", out var oidProp) && oidProp.ValueKind != JsonValueKind.Null)
+                {
+                    orderId = oidProp.ValueKind == JsonValueKind.Number ? oidProp.GetInt64().ToString() : (oidProp.GetString() ?? "");
+                }
+                else if (executionArgs.TryGetProperty("orderId", out var oidPropCamel) && oidPropCamel.ValueKind != JsonValueKind.Null)
+                {
+                    orderId = oidPropCamel.ValueKind == JsonValueKind.Number ? oidPropCamel.GetInt64().ToString() : (oidPropCamel.GetString() ?? "");
+                }
+
+                string externalIdToUse = !string.IsNullOrEmpty(orderId) ? orderId : executionId;
 
                 var direction = (side.Equals("BOT", StringComparison.OrdinalIgnoreCase) || side.Equals("BUY", StringComparison.OrdinalIgnoreCase)) 
                                 ? TradeDirection.BUY : TradeDirection.SELL;
@@ -233,6 +281,7 @@ namespace Finsight.Services.IBKR
                     var tradingService = scope.ServiceProvider.GetRequiredService<ITradingService>();
                     var messagingService = scope.ServiceProvider.GetRequiredService<IMessagingService>();
                     
+                    await messagingService.SendMessageAsync($"*Order Executed (IBKR REST)*: Raw Payload: {executionArgs.GetRawText()}");
                     await messagingService.SendMessageAsync($"*Order Executed (IBKR REST)*: {side} {size} shares of {symbol} at Avg Price ${price} ID: {executionId}");
                     
                     var now = DateTime.UtcNow;
@@ -245,7 +294,7 @@ namespace Finsight.Services.IBKR
                         TradePrice = price,
                         Quantity = size,
                         Date = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, now.Second, DateTimeKind.Utc),
-                        ExternalId = executionId, // We use execution ID here as we might not have the parent Order ID easily accessible
+                        ExternalId = externalIdToUse,
                         Commission = commission
                     };
                     

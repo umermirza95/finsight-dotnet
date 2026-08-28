@@ -6,6 +6,7 @@ using Finsight.Models;
 using Microsoft.EntityFrameworkCore;
 using Finsight.DTOs;
 using Finsight.Services.IBKR;
+using Finsight.Commands;
 
 namespace Finsight.Services
 {
@@ -222,8 +223,7 @@ namespace Finsight.Services
 
         public async Task<List<ActiveOrderDTO>> GetActiveOrdersAsync(string userId)
         {
-            if (!IsConnected(userId))
-                return new List<ActiveOrderDTO>();
+            
 
             string baseUrl = await GetBaseUrlAsync(userId);
 
@@ -262,6 +262,7 @@ namespace Finsight.Services
                     ordersList.Add(new ActiveOrderDTO
                     {
                         OrderId = order.TryGetProperty("orderId", out var oid) ? (oid.ValueKind == JsonValueKind.Number ? oid.GetInt32() : int.Parse(oid.GetString() ?? "0")) : 0,
+                        ConId = order.TryGetProperty("conid", out var cid) ? (cid.ValueKind == JsonValueKind.Number ? cid.GetInt32() : int.Parse(cid.GetString() ?? "0")) : 0,
                         Ticker = order.TryGetProperty("ticker", out var t) ? t.GetString() ?? "" : "",
                         Action = order.TryGetProperty("side", out var s) ? s.GetString() ?? "" : "",
                         Quantity = order.TryGetProperty("remainingQuantity", out var rq) ? GetDecimalSafe(rq) : 0m,
@@ -275,28 +276,52 @@ namespace Finsight.Services
             return ordersList;
         }
 
-        public async Task AdjustOrderPriceAsync(string userId, int permId, decimal newPrice)
+        public async Task AdjustOrderPriceAsync(string userId, AdjustOrderPriceCommand command)
         {
-            if (!IsConnected(userId))
-                throw new Exception("IBKR is not connected.");
-
             string baseUrl = await GetBaseUrlAsync(userId);
             string acc = "U7630023"; // Need account ID, defaulting
 
             var payload = new
             {
-                price = (double)newPrice
+                conid = command.ConId,
+                orderType = "LMT",
+                price = (double)command.NewPrice,
+                quantity = (double)command.Quantity,
+                side = command.Action,
+                tif = "GTC",
+                allOrNone = true
             };
 
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/v1/api/iserver/account/{acc}/order/{permId}");
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/v1/api/iserver/account/{acc}/order/{command.OrderId}");
             request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
             var response = await _httpClient.SendAsync(request);
             var responseContent = await response.Content.ReadAsStringAsync();
+            
+            using var doc = JsonDocument.Parse(responseContent);
+            if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
+            {
+                var first = doc.RootElement[0];
+                if (first.TryGetProperty("error", out var errProp))
+                {
+                    throw new Exception($"IBKR Error adjusting order price: {errProp.GetString()}");
+                }
+            }
+            else if (doc.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                if (doc.RootElement.TryGetProperty("error", out var errProp))
+                {
+                    throw new Exception($"IBKR Error adjusting order price: {errProp.GetString()}");
+                }
+            }
 
             if (!response.IsSuccessStatusCode)
             {
                 throw new Exception($"Failed to adjust order price: {responseContent}");
+            }
+            else
+            {
+                _logger.LogInformation($"Order price adjusted successfully.  {responseContent}");
             }
         }
 
@@ -323,12 +348,6 @@ namespace Finsight.Services
         public async Task<List<FSTrade>> FetchTodayTradesAsync(string userId)
         {
 
-
-            if (!IsConnected(userId))
-            {
-                _logger.LogWarning("Cannot fetch today's trades. IBKR is not connected.");
-                throw new Exception("IBKR is not connected.");
-            }
 
             string baseUrl = await GetBaseUrlAsync(userId);
             var request = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/v1/api/iserver/account/trades");

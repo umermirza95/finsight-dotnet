@@ -231,7 +231,7 @@ namespace Finsight.Controller
                 var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
                 if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-                await brokerService.AdjustOrderPriceAsync(userId, request.PermId, request.NewPrice);
+                await brokerService.AdjustOrderPriceAsync(userId, request);
                 return Ok(new { message = "Order price adjusted successfully." });
             }
             catch (InvalidOperationException ex)
