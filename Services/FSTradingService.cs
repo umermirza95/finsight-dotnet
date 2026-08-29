@@ -37,20 +37,34 @@ namespace Finsight.Services
             if (fetchedTrades == null || !fetchedTrades.Any())
                 return;
 
-            var orderIds = fetchedTrades.Select(t => t.ExternalId).ToList();
+            var distinctFetchedTrades = fetchedTrades.GroupBy(t => t.ExternalId).Select(g => g.First()).ToList();
+            var orderIds = distinctFetchedTrades.Select(t => t.ExternalId).ToList();
 
-            var existingTradeIds = await _dbContext.FSTrades
+            var existingTrades = await _dbContext.FSTrades
                 .Where(t => t.FSUserId == userId && orderIds.Contains(t.ExternalId))
-                .Select(t => t.ExternalId)
                 .ToListAsync();
 
-            var existingTradesSet = new HashSet<string>(existingTradeIds);
+            var existingTradesDict = existingTrades.ToDictionary(t => t.ExternalId);
 
             var newTrades = new List<FSTrade>();
+            var updatedTrades = new List<FSTrade>();
 
-            foreach (var fetchedTrade in fetchedTrades)
+            foreach (var fetchedTrade in distinctFetchedTrades)
             {
-                if (!existingTradesSet.Contains(fetchedTrade.ExternalId))
+                if (existingTradesDict.TryGetValue(fetchedTrade.ExternalId, out var existingTrade))
+                {
+                    if (existingTrade.Commission != fetchedTrade.Commission ||
+                        existingTrade.TradePrice != fetchedTrade.TradePrice ||
+                        existingTrade.Quantity != fetchedTrade.Quantity)
+                    {
+                        existingTrade.Commission = fetchedTrade.Commission;
+                        existingTrade.TradePrice = fetchedTrade.TradePrice;
+                        existingTrade.Quantity = fetchedTrade.Quantity;
+                        existingTrade.Date = fetchedTrade.Date;
+                        updatedTrades.Add(existingTrade);
+                    }
+                }
+                else
                 {
                     newTrades.Add(fetchedTrade);
                 }
@@ -59,12 +73,38 @@ namespace Finsight.Services
             if (newTrades.Any())
             {
                 _dbContext.FSTrades.AddRange(newTrades);
+            }
+
+            if (updatedTrades.Any())
+            {
+                var updatedTradeIds = updatedTrades.Select(t => t.ExternalId).ToList();
+                
+                var closedTradesToRecalculate = await _dbContext.FSClosedTrades
+                    .Include(c => c.OpenTrade)
+                    .Include(c => c.CloseTrade)
+                    .Include(c => c.InsurancePayout)
+                    .Where(c => c.FSUserId == userId && 
+                               (updatedTradeIds.Contains(c.OrderOpenId) || updatedTradeIds.Contains(c.OrderCloseId)))
+                    .ToListAsync();
+
+                foreach (var closedTrade in closedTradesToRecalculate)
+                {
+                    closedTrade.RecalculateNetProfit();
+                    if (closedTrade.InsurancePayout != null)
+                    {
+                        closedTrade.NetProfit += closedTrade.InsurancePayout.CoveredAmount;
+                    }
+                }
+            }
+
+            if (newTrades.Any() || updatedTrades.Any())
+            {
                 await _dbContext.SaveChangesAsync();
-                _logger.LogInformation($"Inserted {newTrades.Count} new trades for today for user {userId}.");
+                _logger.LogInformation($"Inserted {newTrades.Count} new trades, updated {updatedTrades.Count} existing trades for user {userId}.");
             }
             else
             {
-                _logger.LogInformation($"No new trades to insert for today for user {userId}.");
+                _logger.LogInformation($"No new trades to insert or update for today for user {userId}.");
             }
         }
 
@@ -208,6 +248,11 @@ namespace Finsight.Services
 
         public async Task HandleTradeExecutionAsync(FSTrade trade)
         {
+            bool tradeExists = await _dbContext.FSTrades.AnyAsync(t => t.ExternalId == trade.ExternalId);
+            if (tradeExists)
+            {
+                return;
+            }
 
             _dbContext.FSTrades.Add(trade);
             await _dbContext.SaveChangesAsync();
@@ -227,7 +272,7 @@ namespace Finsight.Services
             decimal shares = config.SharesPerTranche;
             decimal distancePercentage = config.DistancePerTranche / 100m;
 
-            await _brokerService.CancelAllOrdersAsync(trade.FSUserId, config.LogsOnly);
+            await _brokerService.CancelAllOrdersAsync(trade.FSUserId);
 
             var targetTicker = !string.IsNullOrWhiteSpace(config.Ticker) ? config.Ticker : trade.Ticker;
 
@@ -236,10 +281,10 @@ namespace Finsight.Services
                 decimal distance = trade.TradePrice * distancePercentage;
                 decimal targetSellPrice = Math.Round(trade.TradePrice + distance, 2);
 
-                await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.SELL, targetSellPrice, shares, config.LogsOnly);
+                await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.SELL, targetSellPrice, shares);
 
                 decimal targetBuyPrice = Math.Round(trade.TradePrice - distance, 2);
-                await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, targetBuyPrice, shares, config.LogsOnly);
+                await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, targetBuyPrice, shares);
             }
             else // SELL
             {
@@ -252,7 +297,7 @@ namespace Finsight.Services
 
                 if (mostRecentBuyTrade == null)
                 {
-                    await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, Math.Round(trade.TradePrice, 2), shares, config.LogsOnly);
+                    await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, Math.Round(trade.TradePrice, 2), shares);
                 }
                 else
                 {
@@ -260,15 +305,15 @@ namespace Finsight.Services
 
                     if (mostRecentBuyTrade.TradePrice - distance > trade.TradePrice)
                     {
-                        await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, Math.Round(trade.TradePrice, 2), shares, config.LogsOnly);
+                        await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, Math.Round(trade.TradePrice, 2), shares);
                     }
                     else
                     {
                         decimal targetBuyPrice = Math.Round(mostRecentBuyTrade.TradePrice - distance, 2);
                         decimal targetSellPrice = Math.Round(mostRecentBuyTrade.TradePrice + distance, 2);
 
-                        await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, targetBuyPrice, shares, config.LogsOnly);
-                        await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.SELL, targetSellPrice, mostRecentBuyTrade.Quantity, config.LogsOnly);
+                        await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, targetBuyPrice, shares);
+                        await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.SELL, targetSellPrice, mostRecentBuyTrade.Quantity);
                     }
 
                 }
@@ -299,7 +344,6 @@ namespace Finsight.Services
             if (dto.AutoTrade.HasValue) config.AutoTrade = dto.AutoTrade.Value;
             if (dto.SharesPerTranche.HasValue) config.SharesPerTranche = dto.SharesPerTranche.Value;
             if (dto.DistancePerTranche.HasValue) config.DistancePerTranche = dto.DistancePerTranche.Value;
-            if (dto.LogsOnly.HasValue) config.LogsOnly = dto.LogsOnly.Value;
             if (dto.ServerIp != null) config.ServerIp = dto.ServerIp;
             if (dto.Ticker != null) config.Ticker = dto.Ticker;
 

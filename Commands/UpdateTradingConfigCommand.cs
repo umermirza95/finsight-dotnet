@@ -9,7 +9,6 @@ namespace Finsight.Commands
         public bool? AutoTrade { get; set; }
         public decimal? SharesPerTranche { get; set; }
         public decimal? DistancePerTranche { get; set; }
-        public bool? LogsOnly { get; set; }
         public string? ServerIp { get; set; }
         public string? Ticker { get; set; }
     }

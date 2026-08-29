@@ -135,14 +135,12 @@ namespace Finsight.Services
             return currentContent;
         }
 
-        public async Task PlaceLimitOrderAsync(string userId, string ticker, TradeDirection direction, decimal limitPrice, decimal quantity, bool logsOnly, string? account = null)
+        public async Task PlaceLimitOrderAsync(string userId, string ticker, TradeDirection direction, decimal limitPrice, decimal quantity, string? account = null)
         {
             if (!IsConnected(userId))
                 throw new Exception("IBKR CP API is not connected.");
 
             await _messagingService.SendMessageAsync($"*Action Intent*: Placing {direction} limit order for {quantity} shares of {ticker} at ${limitPrice}.");
-
-            if (logsOnly) return;
 
             string baseUrl = await GetBaseUrlAsync(userId);
             string acc = !string.IsNullOrEmpty(account) ? account : "U7630023";
@@ -219,13 +217,9 @@ namespace Finsight.Services
             _logger.LogInformation($"Successfully placed limit order for {ticker} {direction} {quantity} @ {limitPrice}. Order ID: {finalOrderId}");
         }
 
-        public async Task CancelAllOrdersAsync(string userId, bool logsOnly)
+        public async Task CancelAllOrdersAsync(string userId)
         {
             await _messagingService.SendMessageAsync("*Action Intent*: Canceling all open orders.");
-            if (logsOnly) return;
-
-            if (!IsConnected(userId))
-                throw new Exception("IBKR is not connected.");
 
             string baseUrl = await GetBaseUrlAsync(userId);
 
@@ -238,8 +232,6 @@ namespace Finsight.Services
                 var request = new HttpRequestMessage(HttpMethod.Delete, $"{baseUrl}/v1/api/iserver/account/{acc}/order/{order.OrderId}");
                 await _httpClient.SendAsync(request);
             }
-
-            _logger.LogInformation("Requested global cancel of all open orders.");
         }
 
         public async Task<List<ActiveOrderDTO>> GetActiveOrdersAsync(string userId)

@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Finsight.Interfaces;
 using Finsight.Models;
 using Finsight.Enums;
@@ -64,30 +65,6 @@ namespace Finsight.Services.IBKR
                 _webSocket.Options.RemoteCertificateValidationCallback = (sender, cert, chain, errors) => true;
                 _webSocket.Options.Cookies = _cookieContainer;
 
-                // 1. Check if authenticated
-                var authResponse = await _httpClient.GetAsync("/v1/api/iserver/auth/status");
-                if (!authResponse.IsSuccessStatusCode)
-                {
-                    _logger.LogWarning($"Failed to check IBKR CP API auth status. Status: {authResponse.StatusCode}");
-                    throw new Exception($"Authentication failed or gateway is not reachable. Status: {authResponse.StatusCode}");
-                }
-
-                // 2. Set active account for the session
-                var accountsResponse = await _httpClient.GetAsync("/v1/api/portfolio/accounts");
-                if (accountsResponse.IsSuccessStatusCode)
-                {
-                    var accountsContent = await accountsResponse.Content.ReadAsStringAsync();
-                    using var accountsDoc = System.Text.Json.JsonDocument.Parse(accountsContent);
-                    if (accountsDoc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array && accountsDoc.RootElement.GetArrayLength() > 0)
-                    {
-                        var acc = accountsDoc.RootElement[0].GetProperty("accountId").GetString() ?? "U7630023";
-                        var accPayload = new { acctId = acc };
-                        var setAccReq = new HttpRequestMessage(HttpMethod.Post, "/v1/api/iserver/account");
-                        setAccReq.Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(accPayload), Encoding.UTF8, "application/json");
-                        await _httpClient.SendAsync(setAccReq);
-                        _logger.LogInformation($"Selected active session account: {acc}");
-                    }
-                }
 
                 // 2. Connect to WebSocket
                 string wsUrl = $"wss://{host}:{port}/v1/api/ws";
@@ -148,18 +125,14 @@ namespace Finsight.Services.IBKR
                 while (!_cts.IsCancellationRequested && IsConnected)
                 {
                     await Task.Delay(TimeSpan.FromMinutes(1), _cts.Token);
-                    
-                    // Call tickle to maintain session
                     try
                     {
                         var content = new StringContent("{}", Encoding.UTF8, "application/json");
                         var response = await _httpClient.PostAsync("/v1/api/tickle", content, _cts.Token);
                         if (!response.IsSuccessStatusCode)
                         {
-                            _logger.LogWarning("IBKR Tickle failed.");
                             Disconnect();
                         }
-                        _logger.LogInformation("IBKR Tickle successful.");
                     }
                     catch (Exception ex)
                     {
@@ -183,7 +156,6 @@ namespace Finsight.Services.IBKR
                     var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
-                        _logger.LogWarning("IBKR WebSocket closed by server.");
                         Disconnect();
                         break;
                     }
@@ -239,74 +211,29 @@ namespace Finsight.Services.IBKR
             _logger.LogInformation($"Trade execution payload: {executionArgs.GetRawText()}");
             try
             {
-                var requiredProps = new[] { "symbol", "side", "size", "price" };
-                foreach (var prop in requiredProps)
-                {
-                    if (!executionArgs.TryGetProperty(prop, out var element) || element.ValueKind == JsonValueKind.Null)
-                    {
-                        throw new Exception($"Trade execution is missing required property: '{prop}'");
-                    }
-                }
+                var payload = executionArgs.Deserialize<TradeExecutionPayload>();
 
-                string symbol = executionArgs.GetProperty("symbol").GetString() ?? throw new Exception("symbol cannot be null");
-                string side = executionArgs.GetProperty("side").GetString() ?? throw new Exception("side cannot be null");
-                
-                var sizeProp = executionArgs.GetProperty("size");
-                decimal size = sizeProp.ValueKind == JsonValueKind.Number ? sizeProp.GetDecimal() : decimal.Parse(sizeProp.GetString()!);
-                
-                var priceProp = executionArgs.GetProperty("price");
-                decimal price = priceProp.ValueKind == JsonValueKind.Number ? priceProp.GetDecimal() : decimal.Parse(priceProp.GetString()!);
-                
-                decimal commission = 0m;
-                if (executionArgs.TryGetProperty("commission", out var cProp) && cProp.ValueKind != JsonValueKind.Null)
-                {
-                    commission = cProp.ValueKind == JsonValueKind.Number ? cProp.GetDecimal() : decimal.Parse(cProp.GetString()!);
-                }
-                
-                string executionId = "";
-                if (executionArgs.TryGetProperty("executionId", out var execIdProp) && execIdProp.ValueKind != JsonValueKind.Null)
-                    executionId = execIdProp.GetString() ?? "";
-                else if (executionArgs.TryGetProperty("execution_id", out var execIdSnakeProp) && execIdSnakeProp.ValueKind != JsonValueKind.Null)
-                    executionId = execIdSnakeProp.GetString() ?? "";
-                else
-                    throw new Exception("executionId or execution_id cannot be null");
+                if (payload == null) return;
 
-                string orderId = "";
-                if (executionArgs.TryGetProperty("order_id", out var oidProp) && oidProp.ValueKind != JsonValueKind.Null)
-                {
-                    orderId = oidProp.ValueKind == JsonValueKind.Number ? oidProp.GetInt64().ToString() : (oidProp.GetString() ?? "");
-                }
-                else if (executionArgs.TryGetProperty("orderId", out var oidPropCamel) && oidPropCamel.ValueKind != JsonValueKind.Null)
-                {
-                    orderId = oidPropCamel.ValueKind == JsonValueKind.Number ? oidPropCamel.GetInt64().ToString() : (oidPropCamel.GetString() ?? "");
-                }
-
-                string externalIdToUse = !string.IsNullOrEmpty(orderId) ? orderId : executionId;
-
-                var direction = (side.Equals("BOT", StringComparison.OrdinalIgnoreCase) || side.Equals("BUY", StringComparison.OrdinalIgnoreCase)) 
-                                ? TradeDirection.BUY : TradeDirection.SELL;
+                var direction = payload.Side.Equals("B", StringComparison.OrdinalIgnoreCase) ? TradeDirection.BUY : TradeDirection.SELL;
 
                 Task.Run(async () => 
                 {
                     using var scope = _scopeFactory.CreateScope();
                     var tradingService = scope.ServiceProvider.GetRequiredService<ITradingService>();
-                    var messagingService = scope.ServiceProvider.GetRequiredService<IMessagingService>();
-                    
-                    await messagingService.SendMessageAsync($"*Order Executed (IBKR REST)*: Raw Payload: {executionArgs.GetRawText()}");
-                    await messagingService.SendMessageAsync($"*Order Executed (IBKR REST)*: {side} {size} shares of {symbol} at Avg Price ${price} ID: {executionId}");
-                    
+                
                     var now = DateTime.UtcNow;
                     var trade = new FSTrade
                     {
                         Id = Guid.NewGuid(),
                         FSUserId = _userId,
-                        Ticker = symbol,
+                        Ticker = payload.Symbol,
                         TradeDirection = direction,
-                        TradePrice = price,
-                        Quantity = size,
+                        TradePrice = payload.Price,
+                        Quantity = payload.Size,
                         Date = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, now.Second, DateTimeKind.Utc),
-                        ExternalId = externalIdToUse,
-                        Commission = commission
+                        ExternalId = payload.OrderId.ToString(),
+                        Commission = payload.Commission
                     };
                     
                     await tradingService.HandleTradeExecutionAsync(trade);
@@ -324,5 +251,36 @@ namespace Finsight.Services.IBKR
             _webSocket?.Dispose();
             _httpClient?.Dispose();
         }
+    }
+
+    public class TradeExecutionPayload
+    {
+        [JsonPropertyName("symbol")]
+        [JsonRequired]
+        public required string Symbol { get; set; }
+
+        [JsonPropertyName("side")]
+        [JsonRequired]
+        public required string Side { get; set; }
+
+        [JsonPropertyName("size")]
+        [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
+        [JsonRequired]
+        public decimal Size { get; set; }
+
+        [JsonPropertyName("price")]
+        [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
+        [JsonRequired]
+        public decimal Price { get; set; }
+
+        [JsonPropertyName("order_id")]
+        [JsonRequired]
+        public long OrderId { get; set; }
+
+        [JsonPropertyName("commission")]
+        [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
+        public decimal Commission { get; set; }
+
+        
     }
 }
