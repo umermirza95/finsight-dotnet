@@ -3,7 +3,9 @@ namespace Finsight.Enums
     public enum FSTransactionType
     {
         income,
-        expense
+        expense,
+        transfer_in,
+        transfer_out
     }
 
     public enum FSTransactionSubType

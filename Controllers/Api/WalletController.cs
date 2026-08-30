@@ -81,11 +81,11 @@ namespace Finsight.Controllers.Api
             try
             {
                 var wallet = await _walletService.GetWalletAsync(id, userIdString);
+                if (wallet == null)
+                {
+                    return NotFound(new { error = "Wallet not found." });
+                }
                 return Ok(new { data = wallet });
-            }
-            catch (KeyNotFoundException ex)
-            {
-                return NotFound(new { error = ex.Message });
             }
             catch (Exception ex)
             {

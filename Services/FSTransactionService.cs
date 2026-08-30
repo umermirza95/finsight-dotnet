@@ -27,7 +27,7 @@ namespace Finsight.Services
                 && t.Date <= query.To
                 && (!query.Type.HasValue || t.Type == query.Type)
                 && (query.CategoryIds == null || query.CategoryIds.Count == 0 || query.CategoryIds.Contains(t.FSCategoryId))
-                && (!query.WalletId.HasValue || t.FSWalletId == query.WalletId)
+                && (t.FSWalletId == query.WalletId)
                 && (string.IsNullOrEmpty(query.SearchQuery) || EF.Functions.ILike(t.Comment!, $"%{query.SearchQuery}%"))
                 select new
                 {

@@ -28,11 +28,16 @@ namespace Finsight.Controllers.Api
         }
 
         [HttpPost("upload")]
-        public async Task<IActionResult> UploadBankStatement(IFormFile file)
+        public async Task<IActionResult> UploadBankStatement([FromForm] IFormFile file, [FromForm] Guid walletId)
         {
             if (file == null || file.Length == 0)
             {
                 return BadRequest("No file uploaded.");
+            }
+
+            if (walletId == Guid.Empty)
+            {
+                return BadRequest("Wallet ID is required.");
             }
 
             if (file.ContentType != "application/pdf")
@@ -42,7 +47,7 @@ namespace Finsight.Controllers.Api
 
             var userId = GetUserId();
             using var stream = file.OpenReadStream();
-            var transactions = await _llmService.ParseBankStatementAsync(stream, userId);
+            var transactions = await _llmService.ParseBankStatementAsync(stream, userId, walletId);
 
             var dtos = transactions.Select(t => new FSImportedTransactionDTO
             {

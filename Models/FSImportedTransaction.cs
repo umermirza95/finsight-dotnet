@@ -16,7 +16,7 @@ namespace Finsight.Models
         public required string FSUserId { get; set; }
 
         [ForeignKey(nameof(FSWallet))]
-        public required Guid FSWalletId { get; set; }
+        public Guid? FSWalletId { get; set; }
 
         public required string Description { get; set; }
 

@@ -104,10 +104,11 @@ namespace Finsight.Services
                 return null;
             }
         }
-        public async Task<List<FSImportedTransaction>> ParseBankStatementAsync(Stream pdfStream, string userId)
+        public async Task<List<FSImportedTransaction>> ParseBankStatementAsync(Stream pdfStream, string userId, Guid walletId)
         {
-            
-
+            using var context = await _dbFactory.CreateDbContextAsync();
+            var wallet = await context.FSWallets.FirstOrDefaultAsync(w => w.Id == walletId && w.FSUserId == userId);
+            if (wallet == null) throw new InvalidOperationException("Wallet not found or does not belong to user.");
             var schemaTemplate = @"[
                 {
                     ""Description"": ""string"",
@@ -209,10 +210,6 @@ namespace Finsight.Services
                     return new List<FSImportedTransaction>();
                 }
 
-                using var context = await _dbFactory.CreateDbContextAsync();
-
-                var wallet = await context.FSWallets.FirstOrDefaultAsync(w => w.FSUserId == userId);
-                if (wallet == null) throw new InvalidOperationException("User has no wallet for imported transaction.");
 
                 var finalTransactions = new List<FSImportedTransaction>();
                 

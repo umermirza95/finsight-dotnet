@@ -1,4 +1,5 @@
 using Finsight.Commands;
+using Finsight.DTOs;
 using Finsight.Interfaces;
 using Finsight.Models;
 using Microsoft.EntityFrameworkCore;
@@ -44,27 +45,67 @@ namespace Finsight.Services
             return wallet;
         }
 
-        public async Task<IEnumerable<FSWallet>> GetWalletsAsync(string userId)
+        public async Task<IEnumerable<FSWalletDTO>> GetWalletsAsync(string userId)
         {
             using var _context = await _dbFactory.CreateDbContextAsync();
             return await _context.FSWallets
                 .Where(w => w.FSUserId == userId)
+                .Select(w => new FSWalletDTO
+                {
+                    Id = w.Id,
+                    Name = w.Name,
+                    FSCurrencyCode = w.FSCurrencyCode,
+                    CreationDate = w.CreationDate,
+                    InitialBalance = w.InitialBalance,
+                    Order = w.Order,
+                    Balance = w.InitialBalance + _context.Transactions
+                        .Where(t => t.FSWalletId == w.Id)
+                        .Select(t => new
+                        {
+                            t.Amount,
+                            t.Type,
+                            Rate = t.FSCurrencyCode == w.FSCurrencyCode ? 1m :
+                                _context.FSExchangeRates
+                                .Where(r => r.From == t.FSCurrencyCode && r.To == w.FSCurrencyCode && r.Date == t.Date)
+                                .Select(r => (decimal?)r.ExchangeRate)
+                                .FirstOrDefault() ?? 1m
+                        })
+                        .Sum(x => (x.Type == Finsight.Enums.FSTransactionType.income || x.Type == Finsight.Enums.FSTransactionType.transfer_in ? 1 : -1) * x.Amount * x.Rate)
+                })
                 .OrderByDescending(w => w.Order)
                 .ThenByDescending(w => w.CreationDate)
                 .ToListAsync();
         }
 
-        public async Task<FSWallet> GetWalletAsync(Guid walletId, string userId)
+        public async Task<FSWalletDTO?> GetWalletAsync(Guid walletId, string userId)
         {
             using var _context = await _dbFactory.CreateDbContextAsync();
             var wallet = await _context.FSWallets
-                .FirstOrDefaultAsync(w => w.Id == walletId && w.FSUserId == userId);
-                
-            if (wallet == null)
-            {
-                throw new KeyNotFoundException("Wallet not found.");
-            }
-            
+                .Where(w => w.Id == walletId && w.FSUserId == userId)
+                .Select(w => new FSWalletDTO
+                {
+                    Id = w.Id,
+                    Name = w.Name,
+                    FSCurrencyCode = w.FSCurrencyCode,
+                    CreationDate = w.CreationDate,
+                    InitialBalance = w.InitialBalance,
+                    Order = w.Order,
+                    Balance = w.InitialBalance + _context.Transactions
+                        .Where(t => t.FSWalletId == w.Id)
+                        .Select(t => new
+                        {
+                            t.Amount,
+                            t.Type,
+                            Rate = t.FSCurrencyCode == w.FSCurrencyCode ? 1m :
+                                _context.FSExchangeRates
+                                .Where(r => r.From == t.FSCurrencyCode && r.To == w.FSCurrencyCode && r.Date == t.Date)
+                                .Select(r => (decimal?)r.ExchangeRate)
+                                .FirstOrDefault() ?? 1m
+                        })
+                        .Sum(x => (x.Type == Finsight.Enums.FSTransactionType.income || x.Type == Finsight.Enums.FSTransactionType.transfer_in ? 1 : -1) * x.Amount * x.Rate)
+                })
+                .FirstOrDefaultAsync();
+
             return wallet;
         }
     }
