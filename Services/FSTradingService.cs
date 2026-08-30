@@ -19,15 +19,17 @@ namespace Finsight.Services
         private readonly IMarketDataService _marketDataService;
         private readonly IBrokerService _brokerService;
         private readonly ITransactionService _transactionService;
+        private readonly IMessagingService _messagingService;
 
 
-        public FSTradingService(AppDbContext dbContext, ILogger<FSTradingService> logger, IMarketDataService marketDataService, IBrokerService brokerService, ITransactionService transactionService)
+        public FSTradingService(AppDbContext dbContext, ILogger<FSTradingService> logger, IMarketDataService marketDataService, IBrokerService brokerService, ITransactionService transactionService, IMessagingService messagingService)
         {
             _dbContext = dbContext;
             _logger = logger;
             _marketDataService = marketDataService;
             _brokerService = brokerService;
             _transactionService = transactionService;
+            _messagingService = messagingService;
         }
 
 
@@ -269,6 +271,8 @@ namespace Finsight.Services
                 return;
             }
 
+            await _messagingService.SendMessageAsync($"Trade executed: {trade.TradeDirection} {trade.Quantity} shares of {trade.Ticker} at ${trade.TradePrice}. Auto-trading is enabled, placing limit orders...");
+
             decimal shares = config.SharesPerTranche;
             decimal distancePercentage = config.DistancePerTranche / 100m;
 
@@ -445,30 +449,7 @@ namespace Finsight.Services
 
             _dbContext.FSProfitDistributions.Add(distribution);
 
-            if (command.Type == Finsight.Enums.ProfitDistributionType.Withdrawal)
-            {
-                var category = await _dbContext.Categories
-                    .FirstOrDefaultAsync(c => c.FSUserId == userId && c.Name.ToLower() == "business");
-
-                if (category != null)
-                {
-                    var transaction = new FSTransaction
-                    {
-                        Id = Guid.NewGuid(),
-                        FSUserId = userId,
-                        Amount = command.Amount,
-                        FSCategoryId = category.Id,
-                        Mode = Finsight.Enums.FSTransactionMode.transfer,
-                        Date = DateOnly.FromDateTime(DateTime.UtcNow),
-                        UpdatedAt = DateTime.UtcNow,
-                        FSCurrencyCode = "USD",
-                        Type = Finsight.Enums.FSTransactionType.income,
-                        Comment = "trading"
-                    };
-
-                    _dbContext.Transactions.Add(transaction);
-                }
-            }
+           
 
             await _dbContext.SaveChangesAsync();
 

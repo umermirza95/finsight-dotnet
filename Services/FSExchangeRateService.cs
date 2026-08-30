@@ -38,6 +38,13 @@ namespace Finsight.Services
             {
                 targetCurrencyCodes.Add(user.DefaultCurrency!);
             }
+            
+            var wallet = await _context.FSWallets.FindAsync(transaction.FSWalletId);
+            if (wallet != null && transaction.FSCurrencyCode != wallet.FSCurrencyCode && !targetCurrencyCodes.Contains(wallet.FSCurrencyCode))
+            {
+                targetCurrencyCodes.Add(wallet.FSCurrencyCode);
+            }
+
             if (targetCurrencyCodes.Count != 0)
             {
                 await SaveExchangeRatesAsync(transaction.FSCurrencyCode, targetCurrencyCodes, transaction.Date);

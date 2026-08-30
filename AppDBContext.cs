@@ -24,6 +24,7 @@ public class AppDbContext : IdentityDbContext<FSUser>
     public DbSet<FSInsurancePayout> FSInsurancePayouts { get; set; }
     public DbSet<FSImportedTransaction> FSImportedTransactions { get; set; }
     public DbSet<FSInjectedCapital> FSInjectedCapitals { get; set; }
+    public DbSet<FSWallet> FSWallets { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -148,6 +149,12 @@ public class AppDbContext : IdentityDbContext<FSUser>
                .HasForeignKey(t => t.FSCurrencyCode)
                .OnDelete(DeleteBehavior.Restrict);
 
+            entity
+               .HasOne<FSWallet>()
+               .WithMany()
+               .HasForeignKey(t => t.FSWalletId)
+               .OnDelete(DeleteBehavior.Restrict);
+
             entity.Property(t => t.Type).HasConversion<string>();
             entity.Property(t => t.SubType).HasConversion<string>();
             entity.Property(t => t.Mode).HasConversion<string>();
@@ -263,6 +270,12 @@ public class AppDbContext : IdentityDbContext<FSUser>
                 .HasForeignKey(t => t.FSTransactionId)
                 .OnDelete(DeleteBehavior.SetNull);
 
+            entity
+                .HasOne<FSWallet>()
+                .WithMany()
+                .HasForeignKey(t => t.FSWalletId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             entity.Property(t => t.Type).HasConversion<string>();
         });
 
@@ -271,6 +284,19 @@ public class AppDbContext : IdentityDbContext<FSUser>
             entity.HasOne(c => c.User)
                   .WithMany()
                   .HasForeignKey(c => c.FSUserId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<FSWallet>(entity =>
+        {
+            entity.HasOne<FSUser>()
+                  .WithMany()
+                  .HasForeignKey(w => w.FSUserId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne<FSCurrency>()
+                  .WithMany()
+                  .HasForeignKey(w => w.FSCurrencyCode)
                   .OnDelete(DeleteBehavior.Restrict);
         });
     }

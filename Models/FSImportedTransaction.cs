@@ -15,6 +15,9 @@ namespace Finsight.Models
         [ForeignKey(nameof(FSUser))]
         public required string FSUserId { get; set; }
 
+        [ForeignKey(nameof(FSWallet))]
+        public required Guid FSWalletId { get; set; }
+
         public required string Description { get; set; }
 
         [Column(TypeName = "decimal(18,2)")]

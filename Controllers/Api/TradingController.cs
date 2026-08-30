@@ -212,7 +212,7 @@ namespace Finsight.Controller
                 var direction = request.Direction.Equals("BUY", StringComparison.OrdinalIgnoreCase) 
                                 ? Finsight.Enums.TradeDirection.BUY : Finsight.Enums.TradeDirection.SELL;
                                 
-                await brokerService.PlaceLimitOrderAsync(userId, request.Ticker, direction, request.LimitPrice, request.Quantity, false, request.Account);
+                await brokerService.PlaceLimitOrderAsync(userId, request.Ticker, direction, request.LimitPrice, request.Quantity, request.Account);
                 
                 var orders = await brokerService.GetActiveOrdersAsync(userId);
                 return Ok(new { message = "Order placed successfully.", orders = orders });
@@ -294,7 +294,7 @@ namespace Finsight.Controller
                 var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
                 if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-                await brokerService.CancelAllOrdersAsync(userId, false);
+                await brokerService.CancelAllOrdersAsync(userId);
                 return Ok(new { message = "All orders cancelled successfully." });
             }
             catch (Exception ex)

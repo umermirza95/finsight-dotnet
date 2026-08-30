@@ -27,6 +27,7 @@ namespace Finsight.Services
                 && t.Date <= query.To
                 && (!query.Type.HasValue || t.Type == query.Type)
                 && (query.CategoryIds == null || query.CategoryIds.Count == 0 || query.CategoryIds.Contains(t.FSCategoryId))
+                && (!query.WalletId.HasValue || t.FSWalletId == query.WalletId)
                 && (string.IsNullOrEmpty(query.SearchQuery) || EF.Functions.ILike(t.Comment!, $"%{query.SearchQuery}%"))
                 select new
                 {
@@ -91,6 +92,9 @@ namespace Finsight.Services
             if (query.Type != null)
                 q = q.Where(t => t.Type == query.Type);
 
+            if (query.WalletId != null)
+                q = q.Where(t => t.FSWalletId == query.WalletId);
+
             if (query.CategoryIds != null && query.CategoryIds.Any())
                 q = q.Where(t => query.CategoryIds.Contains(t.FSCategoryId));
 
@@ -125,6 +129,7 @@ namespace Finsight.Services
                 Id = transactionId,
                 FSUserId = userId,
                 Amount = command.Amount,
+                FSWalletId = command.FSWalletId,
                 FSCategoryId = command.CategoryId ?? throw new ArgumentNullException("CategoryId is required"),
                 FSSubCategoryId = command.SubCategoryId,
                 FSCurrencyCode = command.Currency,

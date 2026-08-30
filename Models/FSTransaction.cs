@@ -20,6 +20,9 @@ namespace Finsight.Models
         [ForeignKey(nameof(FSCategory))]
         public required Guid FSCategoryId { get; set; }
 
+        [ForeignKey(nameof(FSWallet))]
+        public required Guid FSWalletId { get; set; }
+
         public required FSTransactionMode Mode { get; set; }
 
         public required DateOnly Date { get; set; }

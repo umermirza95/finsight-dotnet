@@ -13,6 +13,9 @@ namespace Finsight.Commands
         [Required(ErrorMessage = "Category is required")]
         public Guid? CategoryId { get; set; }
 
+        [Required(ErrorMessage = "Wallet is required")]
+        public Guid FSWalletId { get; set; }
+
         public Guid? SubCategoryId { get; set; }
 
         [Required]

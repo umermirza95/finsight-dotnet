@@ -31,6 +31,7 @@ builder.Services.AddScoped<IExchangeRateService, FSExchangeRateService>();
 builder.Services.AddScoped<IFileService, FSLinuxFile>();
 builder.Services.AddScoped<IBudgetService, FSBudgetService>();
 builder.Services.AddScoped<IExchangeRateService, FSExchangeRateService>();
+builder.Services.AddScoped<IWalletService, FSWalletService>();
 builder.Services.AddHttpClient<IFXAPIService, WiseFXAPIService>();
 
 builder.Services.AddSingleton<Finsight.Services.IBKR.IIBKRConnectionManager, Finsight.Services.IBKR.IBKRConnectionManager>();

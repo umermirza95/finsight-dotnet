@@ -10,6 +10,7 @@ namespace Finsight.Queries
         public FSTransactionType? Type { get; set; } // "income" or "expense"
         public List<Guid>? CategoryIds { get; set; } = new List<Guid>();
         public string? SearchQuery { get; set; } 
+        public Guid? WalletId { get; set; }
 
         public void ApplyDefaultDateRange()
         {

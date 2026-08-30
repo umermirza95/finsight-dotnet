@@ -211,6 +211,9 @@ namespace Finsight.Services
 
                 using var context = await _dbFactory.CreateDbContextAsync();
 
+                var wallet = await context.FSWallets.FirstOrDefaultAsync(w => w.FSUserId == userId);
+                if (wallet == null) throw new InvalidOperationException("User has no wallet for imported transaction.");
+
                 var finalTransactions = new List<FSImportedTransaction>();
                 
                 // Keep track of counts per date+amount to handle multiple identical transactions on the same day
@@ -224,6 +227,7 @@ namespace Finsight.Services
                     {
                         Id = "", // Set later
                         FSUserId = userId,
+                        FSWalletId = wallet.Id,
                         Description = dto.Description,
                         Amount = dto.Amount,
                         Date = dto.Date,
