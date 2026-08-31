@@ -24,5 +24,6 @@ namespace Finsight.Interfaces
         Task<decimal> GetInsuranceBalanceAsync(string userId);
         Task<decimal> ReconcileBalanceWithBrokerAsync(string userId);
         Task<decimal> GetTotalCapitalAsync(string userId);
+        Task OpenLimitOrdersAsync(string userId);
     }
 }

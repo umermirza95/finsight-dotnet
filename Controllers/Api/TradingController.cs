@@ -303,6 +303,27 @@ namespace Finsight.Controller
             }
         }
 
+        [HttpPost("open-limit-orders")]
+        public async Task<IActionResult> OpenLimitOrdersAsync()
+        {
+            try
+            {
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+                await _tradingService.OpenLimitOrdersAsync(userId);
+                return Ok(new { message = "Limit orders opened successfully." });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
         [HttpPost("profit-distribution")]
         public async Task<IActionResult> MakeProfitDistributionAsync([FromBody] Commands.MakeProfitDistributionCommand command)
         {

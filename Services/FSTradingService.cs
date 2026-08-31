@@ -582,5 +582,42 @@ namespace Finsight.Services
 
             return uninvestedCash - expectedCash;
         }
+
+        public async Task OpenLimitOrdersAsync(string userId)
+        {
+            var config = await GetTradingConfigAsync(userId);
+            if (config == null || config.SharesPerTranche == 0)
+            {
+                throw new InvalidOperationException("Trading config not set or SharesPerTranche is 0.");
+            }
+
+            await _brokerService.CancelAllOrdersAsync(userId);
+            
+            var targetTicker = config.Ticker;
+            if (string.IsNullOrWhiteSpace(targetTicker))
+            {
+                throw new InvalidOperationException("Ticker is not set in trading config.");
+            }
+            
+            decimal shares = config.SharesPerTranche;
+            decimal distancePercentage = config.DistancePerTranche / 100m;
+
+            var mostRecentBuyTrade = await _dbContext.FSTrades
+                .Where(t => t.FSUserId == userId && t.Ticker == targetTicker && t.TradeDirection == TradeDirection.BUY && !_dbContext.FSClosedTrades.Any(c => c.OrderOpenId == t.ExternalId))
+                .OrderByDescending(t => t.Date)
+                .FirstOrDefaultAsync();
+
+            if (mostRecentBuyTrade == null)
+            {
+                throw new InvalidOperationException("No recent open BUY order found to calculate limit prices.");
+            }
+
+            decimal distance = mostRecentBuyTrade.TradePrice * distancePercentage;
+            decimal targetBuyPrice = Math.Round(mostRecentBuyTrade.TradePrice - distance, 2);
+            decimal targetSellPrice = Math.Round(mostRecentBuyTrade.TradePrice + distance, 2);
+
+            await _brokerService.PlaceLimitOrderAsync(userId, targetTicker, TradeDirection.BUY, targetBuyPrice, shares);
+            await _brokerService.PlaceLimitOrderAsync(userId, targetTicker, TradeDirection.SELL, targetSellPrice, mostRecentBuyTrade.Quantity);
+        }
     }
 }
