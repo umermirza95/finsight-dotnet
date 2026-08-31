@@ -21,6 +21,7 @@ namespace Finsight.Services.IBKR
         
         private bool _isConnected;
         public bool IsConnected => _isConnected && _webSocket?.State == WebSocketState.Open;
+        private bool _isSubscribedToTrades;
 
         private CancellationTokenSource _cts = new();
 
@@ -75,11 +76,7 @@ namespace Finsight.Services.IBKR
                 
                 await _messagingService.SendMessageAsync($"*IBKR Connection Established*: Connected to CP API at {baseUrl}");
 
-                // Subscribe to real-time trade updates
-                var subPayload = "str+{\"realtimeUpdatesOnly\":true}";
-                var subBytes = Encoding.UTF8.GetBytes(subPayload);
-                await _webSocket.SendAsync(new ArraySegment<byte>(subBytes), WebSocketMessageType.Text, true, _cts.Token);
-                _logger.LogInformation("Sent subscription for real-time trades on WebSocket.");
+                _isSubscribedToTrades = false;
 
                 // 3. Start receive loop
                 _ = ReceiveLoopAsync();
@@ -159,7 +156,7 @@ namespace Finsight.Services.IBKR
                         Disconnect();
                         break;
                     }
-                    ProcessWebSocketMessage(message);
+                    await ProcessWebSocketMessageAsync(message);
                 }
             }
             catch (Exception ex) when (ex is not TaskCanceledException)
@@ -169,19 +166,19 @@ namespace Finsight.Services.IBKR
             }
         }
 
-        private void ProcessWebSocketMessage(string message)
+        private async Task ProcessWebSocketMessageAsync(string message)
         {
            
             try
             {
-                _logger.LogInformation($"Received WebSocket message: {message}");
+               
                 using var document = JsonDocument.Parse(message);
                 var root = document.RootElement;
 
                 if (root.TryGetProperty("topic", out var topicProp))
                 {
                     string topic = topicProp.GetString() ?? "";
-                     
+                    _logger.LogInformation($"Received WebSocket message for topic '{topic}': {message}");
                     // Execution reports
                     if (topic == "str" && root.TryGetProperty("args", out var args))
                     {
@@ -192,10 +189,24 @@ namespace Finsight.Services.IBKR
                     }
                     else if (topic == "sts" && root.TryGetProperty("args", out var argsSts))
                     {
-                        if (argsSts.TryGetProperty("authenticated", out var authProp) && authProp.ValueKind == JsonValueKind.False)
+                        if (argsSts.TryGetProperty("authenticated", out var authProp))
                         {
-                            _logger.LogWarning("IBKR WebSocket session is no longer authenticated. Disconnecting...");
-                            Disconnect();
+                            if (authProp.ValueKind == JsonValueKind.False)
+                            {
+                                _logger.LogWarning("IBKR WebSocket session is no longer authenticated. Disconnecting...");
+                                Disconnect();
+                            }
+                            else if (authProp.ValueKind == JsonValueKind.True)
+                            {
+                                if (!_isSubscribedToTrades && _webSocket != null && _webSocket.State == WebSocketState.Open)
+                                {
+                                    var subPayload = "str+{\"realtimeUpdatesOnly\":true}";
+                                    var subBytes = Encoding.UTF8.GetBytes(subPayload);
+                                    await _webSocket.SendAsync(new ArraySegment<byte>(subBytes), WebSocketMessageType.Text, true, _cts.Token);
+                                    _logger.LogInformation("Sent subscription for real-time trades on WebSocket.");
+                                    _isSubscribedToTrades = true;
+                                }
+                            }
                         }
                     }
                 }

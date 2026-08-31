@@ -256,8 +256,16 @@ namespace Finsight.Services
                 return;
             }
 
-            _dbContext.FSTrades.Add(trade);
-            await _dbContext.SaveChangesAsync();
+            try
+            {
+                _dbContext.FSTrades.Add(trade);
+                await _dbContext.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex)
+            {
+                _logger.LogError(ex, $"Error saving trade {trade.ExternalId} for user {trade.FSUserId}. Already processed.");
+                return;
+            }
 
             if (trade.TradeDirection == TradeDirection.SELL)
             {
