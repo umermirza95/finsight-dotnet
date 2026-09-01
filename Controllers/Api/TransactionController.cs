@@ -33,6 +33,16 @@ namespace Finsight.Controller
         [HttpPost]
         public async Task<IActionResult> AddTransactionAsync([FromBody] CreateTransactionCommand command)
         {
+            if (command.Type != Finsight.Enums.FSTransactionType.transfer_in && command.Type != Finsight.Enums.FSTransactionType.transfer_out && command.CategoryId == null)
+            {
+                return BadRequest(new { error = "Category is required for Income and Expense transactions" });
+            }
+
+            if ((command.Type == Finsight.Enums.FSTransactionType.transfer_in || command.Type == Finsight.Enums.FSTransactionType.transfer_out) && command.TransferWalletId == null)
+            {
+                return BadRequest(new { error = "Transfer Wallet is required for Transfer transactions" });
+            }
+
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
             var transaction = await _transactionService.AddTransactionWithFXAsync(command, userIdString);
             var dto = new FSTransactionDTO
@@ -60,6 +70,16 @@ namespace Finsight.Controller
         [HttpPut("{id:guid}")]
         public async Task<IActionResult> EditTransactionAsync(Guid id, [FromBody] EditTransactionCommand command)
         {
+            if (command.Type != Finsight.Enums.FSTransactionType.transfer_in && command.Type != Finsight.Enums.FSTransactionType.transfer_out && command.CategoryId == null)
+            {
+                return BadRequest(new { error = "Category is required for Income and Expense transactions" });
+            }
+
+            if ((command.Type == Finsight.Enums.FSTransactionType.transfer_in || command.Type == Finsight.Enums.FSTransactionType.transfer_out) && command.TransferWalletId == null)
+            {
+                return BadRequest(new { error = "Transfer Wallet is required for Transfer transactions" });
+            }
+
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
             try
             {

@@ -64,7 +64,15 @@ namespace Finsight.Controller
                 if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
                 var openTrades = await _tradingService.GetOpenTradesAsync(userId);
-                return Ok(openTrades);
+                
+                var totalCapital = await _tradingService.GetTotalCapitalAsync(userId);
+                var openBuyTrades = openTrades
+                    .Where(t => t.TradeDirection == Finsight.Enums.TradeDirection.BUY || t.TradeDirection.ToString().Equals("BUY", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                var capitalUsed = openBuyTrades.Sum(t => (t.Quantity * t.TradePrice) + t.Commission);
+                var cashLeft = totalCapital - capitalUsed;
+
+                return Ok(new { trades = openTrades, cashLeft = cashLeft });
             }
             catch (Exception ex)
             {

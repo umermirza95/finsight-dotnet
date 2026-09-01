@@ -124,6 +124,55 @@ namespace Finsight.Services
                     FSUserId = userId
                 });
             }
+            if (command.Type == Finsight.Enums.FSTransactionType.transfer_in || command.Type == Finsight.Enums.FSTransactionType.transfer_out)
+            {
+                var transferInCategoryId = await GetOrCreateTransferCategoryAsync(_context, userId, Finsight.Enums.FSTransactionType.transfer_in);
+                var transferOutCategoryId = await GetOrCreateTransferCategoryAsync(_context, userId, Finsight.Enums.FSTransactionType.transfer_out);
+                
+                var sourceWalletId = command.Type == Finsight.Enums.FSTransactionType.transfer_in ? command.TransferWalletId : command.FSWalletId;
+                var destWalletId = command.Type == Finsight.Enums.FSTransactionType.transfer_in ? command.FSWalletId : command.TransferWalletId;
+
+                var txOut = new FSTransaction
+                {
+                    Id = command.Type == Finsight.Enums.FSTransactionType.transfer_out ? transactionId : Guid.NewGuid(),
+                    FSUserId = userId,
+                    Amount = command.Amount,
+                    FSWalletId = sourceWalletId,
+                    FSCategoryId = transferOutCategoryId,
+                    FSCurrencyCode = command.Currency,
+                    Comment = command.Comment,
+                    Type = Finsight.Enums.FSTransactionType.transfer_out,
+                    Mode = command.Mode,
+                    Date = command.Date,
+                    UpdatedAt = DateTime.UtcNow,
+                    Files = command.Type == Finsight.Enums.FSTransactionType.transfer_out ? fsFiles : []
+                };
+
+                var txIn = new FSTransaction
+                {
+                    Id = command.Type == Finsight.Enums.FSTransactionType.transfer_in ? transactionId : Guid.NewGuid(),
+                    FSUserId = userId,
+                    Amount = command.Amount,
+                    FSWalletId = destWalletId,
+                    FSCategoryId = transferInCategoryId,
+                    FSCurrencyCode = command.Currency,
+                    Comment = command.Comment,
+                    Type = Finsight.Enums.FSTransactionType.transfer_in,
+                    Mode = command.Mode,
+                    Date = command.Date,
+                    UpdatedAt = DateTime.UtcNow,
+                    Files = command.Type == Finsight.Enums.FSTransactionType.transfer_in ? fsFiles : []
+                };
+
+                await exchangeRateService.AddMissingFXRatesForTransactionAsync(txOut, user);
+                await exchangeRateService.AddMissingFXRatesForTransactionAsync(txIn, user);
+                _context.Transactions.Add(txOut);
+                _context.Transactions.Add(txIn);
+                await _context.SaveChangesAsync();
+
+                return command.Type == Finsight.Enums.FSTransactionType.transfer_in ? txIn : txOut;
+            }
+
             var transaction = new FSTransaction
             {
                 Id = transactionId,
@@ -183,7 +232,14 @@ namespace Finsight.Services
 
             // Update properties
             transaction.Amount = command.Amount;
-            transaction.FSCategoryId = command.CategoryId ?? throw new ArgumentNullException("CategoryId is required");
+            if (command.Type == Finsight.Enums.FSTransactionType.transfer_in || command.Type == Finsight.Enums.FSTransactionType.transfer_out)
+            {
+                transaction.FSCategoryId = await GetOrCreateTransferCategoryAsync(_context, userId, command.Type);
+            }
+            else
+            {
+                transaction.FSCategoryId = command.CategoryId ?? throw new ArgumentNullException("CategoryId is required");
+            }
             transaction.FSSubCategoryId = command.SubCategoryId;
             transaction.FSCurrencyCode = command.Currency!;
             transaction.Comment = command.Comment;
@@ -208,6 +264,24 @@ namespace Finsight.Services
             _context.Transactions.Remove(transaction);
             await _context.SaveChangesAsync();
             return true;
+        }
+
+        private async Task<Guid> GetOrCreateTransferCategoryAsync(AppDbContext context, string userId, Finsight.Enums.FSTransactionType type)
+        {
+            var cat = await context.Categories.FirstOrDefaultAsync(c => c.FSUserId == userId && c.Type == type && EF.Functions.ILike(c.Name, "Transfer"));
+            if (cat == null)
+            {
+                cat = new FSCategory
+                {
+                    Id = Guid.NewGuid(),
+                    FSUserId = userId,
+                    Name = "Transfer",
+                    Type = type
+                };
+                context.Categories.Add(cat);
+                await context.SaveChangesAsync();
+            }
+            return cat.Id;
         }
     }
 }
