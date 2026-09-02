@@ -39,14 +39,7 @@ namespace Finsight.Services
             if (config != null && !string.IsNullOrEmpty(config.ServerIp))
             {
                 var host = config.ServerIp;
-                var port = 7497;
-                if (config.ServerIp.Contains(':'))
-                {
-                    var parts = config.ServerIp.Split(':');
-                    host = parts[0];
-                    if (int.TryParse(parts[1], out int parsedPort))
-                        port = parsedPort;
-                }
+                var port = config.ServerPort ?? 7497;
                 return $"https://{host}:{port}";
             }
             return "https://localhost:5000"; // fallback
@@ -271,7 +264,7 @@ namespace Finsight.Services
                 {
                     ordersList.Add(new ActiveOrderDTO
                     {
-                        OrderId = order.TryGetProperty("orderId", out var oid) ? (oid.ValueKind == JsonValueKind.Number ? oid.GetInt32() : int.Parse(oid.GetString() ?? "0")) : 0,
+                        OrderId = order.TryGetProperty("orderId", out var oid) ? oid.ToString() ?? "" : "",
                         ConId = order.TryGetProperty("conid", out var cid) ? (cid.ValueKind == JsonValueKind.Number ? cid.GetInt32() : int.Parse(cid.GetString() ?? "0")) : 0,
                         Ticker = order.TryGetProperty("ticker", out var t) ? t.GetString() ?? "" : "",
                         Action = order.TryGetProperty("side", out var s) ? s.GetString() ?? "" : "",
@@ -346,7 +339,7 @@ namespace Finsight.Services
             _logger.LogInformation($"Order price adjusted successfully. Order ID: {command.OrderId}");
         }
 
-        public async Task CancelOrderAsync(string userId, int permId)
+        public async Task CancelOrderAsync(string userId, string permId)
         {
             if (!IsConnected(userId))
                 throw new Exception("IBKR is not connected.");

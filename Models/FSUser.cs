@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Identity;
+using Finsight.Enums;
 
 namespace Finsight.Models
 {
@@ -15,5 +16,6 @@ namespace Finsight.Models
 
         public string? IBKRToken { get; set; }
         public string? IBKRQueryId { get; set; }
+        public BrokerType PreferredBroker { get; set; } = BrokerType.IBKR;
     }
 }

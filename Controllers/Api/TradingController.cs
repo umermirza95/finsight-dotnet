@@ -71,6 +71,9 @@ namespace Finsight.Controller
                     .ToList();
                 var capitalUsed = openBuyTrades.Sum(t => (t.Quantity * t.TradePrice) + t.Commission);
                 var cashLeft = totalCapital - capitalUsed;
+                
+                var availableProfit = await _tradingService.GetAvailableBalanceAsync(userId);
+                cashLeft += availableProfit;
 
                 return Ok(new { trades = openTrades, cashLeft = cashLeft });
             }
@@ -88,9 +91,27 @@ namespace Finsight.Controller
                 var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
                 if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
+                query.ApplyDefaultDateRange();
+
                 var closedTrades = await _tradingService.GetClosedTradesAsync(userId, query);
-                return Ok(closedTrades);
-                }
+
+                var profitDistributions = await _tradingService.GetProfitDistributionsAsync(userId, new GetProfitDistributionsQuery { StartDate = query.StartDate, EndDate = query.EndDate });
+                var insurancePayouts = await _tradingService.GetInsurancePayoutsAsync(userId, new GetInsurancePayoutsQuery { StartDate = query.StartDate, EndDate = query.EndDate });
+
+                var insuranceDistribution = profitDistributions.Where(p => p.DistributionType == Finsight.Enums.ProfitDistributionType.Insurance).Sum(p => p.Amount);
+                var reinvestment = profitDistributions.Where(p => p.DistributionType == Finsight.Enums.ProfitDistributionType.Reinvestment).Sum(p => p.Amount);
+                var withdrawal = profitDistributions.Where(p => p.DistributionType == Finsight.Enums.ProfitDistributionType.Withdrawal).Sum(p => p.Amount);
+                var totalInsurancePayouts = insurancePayouts.Sum(p => p.CoveredAmount);
+
+                return Ok(new 
+                {
+                    trades = closedTrades,
+                    insuranceDistribution = insuranceDistribution,
+                    reinvestment = reinvestment,
+                    withdrawal = withdrawal,
+                    insurancePayouts = totalInsurancePayouts
+                });
+            }
             catch (Exception ex)
             {
                 return StatusCode(500, new { error = ex.Message });
@@ -115,13 +136,13 @@ namespace Finsight.Controller
                     }
 
                     var host = config.ServerIp;
-                    var port = 7497; // default port
+                    var port = config.ServerPort ?? 7497; // default port
 
                     if (config.ServerIp.Contains(':'))
                     {
                         var parts = config.ServerIp.Split(':');
                         host = parts[0];
-                        if (int.TryParse(parts[1], out int parsedPort))
+                        if (!config.ServerPort.HasValue && int.TryParse(parts[1], out int parsedPort))
                         {
                             port = parsedPort;
                         }
@@ -274,7 +295,7 @@ namespace Finsight.Controller
         }
 
         [HttpDelete("active-orders/{orderId}")]
-        public async Task<IActionResult> CancelOrderAsync(int orderId, [FromServices] IBrokerService brokerService)
+        public async Task<IActionResult> CancelOrderAsync(string orderId, [FromServices] IBrokerService brokerService)
         {
             try
             {

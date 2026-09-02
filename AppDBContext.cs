@@ -169,6 +169,8 @@ public class AppDbContext : IdentityDbContext<FSUser>
               .WithMany()
               .HasForeignKey(u => u.DefaultCurrency)
               .OnDelete(DeleteBehavior.Restrict);
+
+            entity.Property(u => u.PreferredBroker).HasConversion<string>();
         });
 
         modelBuilder.Entity<FSExchangeRate>(entity =>

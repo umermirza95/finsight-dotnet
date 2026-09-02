@@ -42,4 +42,10 @@ namespace Finsight.Enums
         Withdrawal,
         Reinvestment
     }
+
+    public enum BrokerType
+    {
+        IBKR,
+        Alpaca
+    }
 }

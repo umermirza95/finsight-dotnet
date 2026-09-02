@@ -101,6 +101,7 @@ namespace Finsight.Services.IBKR
                 
                 try
                 {
+                    _messagingService.SendMessageAsync("*IBKR Connection Lost*: Disconnected from CP API.");
                     if (_webSocket != null && _webSocket.State == WebSocketState.Open)
                     {
                         _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Disconnecting", CancellationToken.None).Wait(2000);
@@ -130,6 +131,7 @@ namespace Finsight.Services.IBKR
                         {
                             Disconnect();
                         }
+                        _logger.LogInformation("Sent IBKR tickle to keep connection alive.");
                     }
                     catch (Exception ex)
                     {
@@ -138,7 +140,10 @@ namespace Finsight.Services.IBKR
                     }
                 }
             }
-            catch (TaskCanceledException) { }
+            catch (TaskCanceledException)
+            {
+                _logger.LogInformation("Keep-alive loop canceled.");
+            }
         }
 
         private async Task ReceiveLoopAsync()
@@ -195,6 +200,7 @@ namespace Finsight.Services.IBKR
                             {
                                 _logger.LogWarning("IBKR WebSocket session is no longer authenticated. Disconnecting...");
                                 Disconnect();
+                                
                             }
                             else if (authProp.ValueKind == JsonValueKind.True)
                             {
