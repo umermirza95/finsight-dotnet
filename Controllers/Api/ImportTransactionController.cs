@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using Finsight.Enums;
 
 namespace Finsight.Controllers.Api
 {
@@ -128,5 +129,29 @@ namespace Finsight.Controllers.Api
             return Ok(new { success = true });
         }
 
+        [HttpPut("imported/{id}/type")]
+        public async Task<IActionResult> ChangeImportedTransactionType(string id, [FromBody] ChangeTypeRequest request)
+        {
+            var userId = GetUserId();
+            using var context = await _dbFactory.CreateDbContextAsync();
+
+            var tx = await context.FSImportedTransactions
+                .FirstOrDefaultAsync(t => t.Id == id && t.FSUserId == userId);
+
+            if (tx == null)
+            {
+                return NotFound();
+            }
+
+            tx.Type = request.Type;
+            await context.SaveChangesAsync();
+
+            return Ok(new { success = true });
+        }
+    }
+
+    public class ChangeTypeRequest
+    {
+        public FSTransactionType Type { get; set; }
     }
 }
