@@ -35,7 +35,7 @@ builder.Services.AddScoped<IWalletService, FSWalletService>();
 builder.Services.AddHttpClient<IFXAPIService, WiseFXAPIService>();
 
 builder.Services.AddSingleton<Finsight.Services.IBKR.IIBKRConnectionManager, Finsight.Services.IBKR.IBKRConnectionManager>();
-builder.Services.AddHttpClient<IBrokerService, IBKRBrokerService>().ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true });
+builder.Services.AddHttpClient<IBrokerService, FSAlpacaTradingService>();
 builder.Services.AddScoped<ITradingService, FSTradingService>();
 builder.Services.AddHttpClient<IMarketDataService, AlpacaMarketDataService>();
 builder.Services.AddHttpClient<IMessagingService, SlackMessagingService>();
