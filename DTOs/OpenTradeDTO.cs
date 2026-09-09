@@ -24,7 +24,7 @@ namespace Finsight.DTOs
                 Ticker = trade.Ticker,
                 TradePrice = trade.TradePrice,
                 TradeDirection = trade.TradeDirection,
-                Quantity = trade.Quantity,
+                Quantity = trade.SharesLeft,
                 Commission = trade.Commission,
                 Date = trade.Date,
                 ExternalId = trade.ExternalId,

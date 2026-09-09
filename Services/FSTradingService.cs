@@ -159,8 +159,7 @@ namespace Finsight.Services
         {
             var trades = await _dbContext.FSTrades
                 .Where(t => t.FSUserId == userId
-                && t.Ticker != "EUR"
-                && !_dbContext.FSClosedTrades.Any(c => c.OrderOpenId == t.ExternalId || c.OrderCloseId == t.ExternalId))
+                && (!_dbContext.FSClosedTrades.Any(c => c.OrderOpenId == t.ExternalId || c.OrderCloseId == t.ExternalId)) || t.SharesLeft > 0)
                 .OrderByDescending(t => t.Date)
                 .ToListAsync();
 

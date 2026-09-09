@@ -1,9 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net.Http;
-using System.Text;
-using System.Text.Json;
 using System.Threading.Tasks;
 using Finsight.Commands;
 using Finsight.DTOs;
@@ -13,25 +10,25 @@ using Finsight.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using System.Net.Http;
+using Alpaca.Markets;
 
 namespace Finsight.Services
 {
     public class FSAlpacaTradingService : IBrokerService
     {
-        private readonly HttpClient _httpClient;
         private readonly AppDbContext _dbContext;
         private readonly IConfiguration _configuration;
         private readonly ILogger<FSAlpacaTradingService> _logger;
 
         public FSAlpacaTradingService(HttpClient httpClient, AppDbContext dbContext, IConfiguration configuration, ILogger<FSAlpacaTradingService> logger)
         {
-            _httpClient = httpClient;
             _dbContext = dbContext;
             _configuration = configuration;
             _logger = logger;
         }
 
-        private async Task<(string apiKey, string apiSecret, string baseUrl)> GetAlpacaConfigAsync(string userId)
+        private async Task<IAlpacaTradingClient> GetAlpacaClientAsync(string userId)
         {
             var config = await _dbContext.TradingConfigs.FirstOrDefaultAsync(c => c.FSUserId == userId);
             if (config == null || string.IsNullOrEmpty(config.AlpacaApiKey) || string.IsNullOrEmpty(config.AlpacaApiSecret))
@@ -39,21 +36,8 @@ namespace Finsight.Services
                 throw new Exception("Alpaca API credentials are not configured for this user.");
             }
 
-            var baseUrl =  "https://api.alpaca.markets";
-            return (config.AlpacaApiKey, config.AlpacaApiSecret, baseUrl);
-        }
-
-        private HttpRequestMessage CreateRequest(HttpMethod method, string url, string apiKey, string apiSecret, object? payload = null)
-        {
-            var request = new HttpRequestMessage(method, url);
-            request.Headers.Add("APCA-API-KEY-ID", apiKey);
-            request.Headers.Add("APCA-API-SECRET-KEY", apiSecret);
-
-            if (payload != null)
-            {
-                request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-            }
-            return request;
+            var secretKey = new SecretKey(config.AlpacaApiKey, config.AlpacaApiSecret);
+            return Alpaca.Markets.Environments.Live.GetAlpacaTradingClient(secretKey);
         }
 
         public bool IsConnected(string userId)
@@ -72,177 +56,104 @@ namespace Finsight.Services
 
         public async Task PlaceLimitOrderAsync(string userId, string ticker, TradeDirection direction, decimal limitPrice, decimal quantity, string? account = null)
         {
-            var (apiKey, apiSecret, baseUrl) = await GetAlpacaConfigAsync(userId);
+            var client = await GetAlpacaClientAsync(userId);
+            var orderSide = direction == TradeDirection.BUY ? OrderSide.Buy : OrderSide.Sell;
 
-            var payload = new
+            var request = new NewOrderRequest(
+                ticker,
+                OrderQuantity.Fractional(quantity),
+                orderSide,
+                OrderType.Limit,
+                TimeInForce.Gtc
+            )
             {
-                symbol = ticker,
-                qty = (double)quantity,
-                side = direction == TradeDirection.BUY ? "buy" : "sell",
-                type = "limit",
-                time_in_force = "gtc",
-                limit_price = (double)limitPrice,
-                extended_hours=true
+                LimitPrice = limitPrice,
+                ExtendedHours = true
             };
 
-            var request = CreateRequest(HttpMethod.Post, $"{baseUrl}/v2/orders", apiKey, apiSecret, payload);
-            var response = await _httpClient.SendAsync(request);
-            var content = await response.Content.ReadAsStringAsync();
-
-            if (!response.IsSuccessStatusCode)
-            {
-                _logger.LogError($"Failed to place order in Alpaca: {content}");
-                throw new Exception($"Alpaca PlaceOrder Error: {content}");
-            }
+            await client.PostOrderAsync(request);
         }
 
         public async Task<List<ActiveOrderDTO>> GetActiveOrdersAsync(string userId)
         {
-            var (apiKey, apiSecret, baseUrl) = await GetAlpacaConfigAsync(userId);
-            var request = CreateRequest(HttpMethod.Get, $"{baseUrl}/v2/orders?status=open", apiKey, apiSecret);
-            var response = await _httpClient.SendAsync(request);
-            
-            if (!response.IsSuccessStatusCode) return new List<ActiveOrderDTO>();
-
-            var content = await response.Content.ReadAsStringAsync();
-            var ordersList = new List<ActiveOrderDTO>();
-
-            using var doc = JsonDocument.Parse(content);
-            if (doc.RootElement.ValueKind == JsonValueKind.Array)
+            var client = await GetAlpacaClientAsync(userId);
+            var request = new ListOrdersRequest { OrderStatusFilter = OrderStatusFilter.Open };
+            var orders = await client.ListOrdersAsync(request);
+            orders = orders.Where(o => o.Quantity.HasValue && o.LimitPrice.HasValue).ToList();
+            return orders.Select(o => new ActiveOrderDTO
             {
-                foreach (var order in doc.RootElement.EnumerateArray())
-                {
-                    ordersList.Add(new ActiveOrderDTO
-                    {
-                        OrderId = order.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? "" : "",
-                        ConId = 0,
-                        Ticker = order.TryGetProperty("symbol", out var sym) ? sym.GetString() ?? "" : "",
-                        Action = order.TryGetProperty("side", out var side) ? side.GetString()?.ToUpper() ?? "" : "",
-                        Quantity = order.TryGetProperty("qty", out var q) ? GetDecimalSafe(q) : 0m,
-                        LimitPrice = order.TryGetProperty("limit_price", out var p) ? GetDecimalSafe(p) : 0m
-                    });
-                }
-            }
-            return ordersList;
+                OrderId = o.OrderId.ToString(),
+                ConId = 0,
+                Ticker = o.Symbol,
+                Action = o.OrderSide.ToString().ToUpper(),
+                Quantity = o.Quantity!.Value,
+                LimitPrice = o.LimitPrice!.Value
+            }).ToList();
         }
 
         public async Task AdjustOrderPriceAsync(string userId, AdjustOrderPriceCommand command)
         {
-            var (apiKey, apiSecret, baseUrl) = await GetAlpacaConfigAsync(userId);
-            
-            var payload = new
+            var client = await GetAlpacaClientAsync(userId);
+            var request = new ChangeOrderRequest(Guid.Parse(command.OrderId))
             {
-                limit_price = (double)command.NewPrice,
-                qty = (double)command.Quantity
+                LimitPrice = command.NewPrice,
+                Quantity = (long)command.Quantity
             };
-
-            var request = CreateRequest(HttpMethod.Patch, $"{baseUrl}/v2/orders/{command.OrderId}", apiKey, apiSecret, payload);
-            var response = await _httpClient.SendAsync(request);
-            
-            if (!response.IsSuccessStatusCode)
-            {
-                var content = await response.Content.ReadAsStringAsync();
-                throw new Exception($"Failed to adjust order price in Alpaca: {content}");
-            }
+            await client.PatchOrderAsync(request);
         }
 
         public async Task CancelOrderAsync(string userId, string permId)
         {
-            var (apiKey, apiSecret, baseUrl) = await GetAlpacaConfigAsync(userId);
-            var request = CreateRequest(HttpMethod.Delete, $"{baseUrl}/v2/orders/{permId}", apiKey, apiSecret);
-            var response = await _httpClient.SendAsync(request);
-            
-            if (!response.IsSuccessStatusCode)
-            {
-                var content = await response.Content.ReadAsStringAsync();
-                throw new Exception($"Failed to cancel order in Alpaca: {content}");
-            }
+            var client = await GetAlpacaClientAsync(userId);
+            await client.CancelOrderAsync(Guid.Parse(permId));
         }
 
         public async Task CancelAllOrdersAsync(string userId)
         {
-            var (apiKey, apiSecret, baseUrl) = await GetAlpacaConfigAsync(userId);
-            var request = CreateRequest(HttpMethod.Delete, $"{baseUrl}/v2/orders", apiKey, apiSecret);
-            var response = await _httpClient.SendAsync(request);
-            
-            if (!response.IsSuccessStatusCode)
-            {
-                var content = await response.Content.ReadAsStringAsync();
-                throw new Exception($"Failed to cancel all orders in Alpaca: {content}");
-            }
+            var client = await GetAlpacaClientAsync(userId);
+            await client.CancelAllOrdersAsync();
         }
 
         public async Task<List<FSTrade>> FetchTodayTradesAsync(string userId)
         {
-            var (apiKey, apiSecret, baseUrl) = await GetAlpacaConfigAsync(userId);
-            
-            // Fetch trade FILL activities from today
-            var startOfDay = DateTime.UtcNow.Date.ToString("o");
-            var request = CreateRequest(HttpMethod.Get, $"{baseUrl}/v2/account/activities/FILL?after={startOfDay}", apiKey, apiSecret);
-            var response = await _httpClient.SendAsync(request);
-            var content = await response.Content.ReadAsStringAsync();
+            var client = await GetAlpacaClientAsync(userId);
+            var startOfDay = DateTime.UtcNow.Date;
 
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new Exception($"Failed to fetch trades from Alpaca: {content}");
-            }
+            var request = new AccountActivitiesRequest(AccountActivityType.Fill);
+
+            var activities = await client.ListAccountActivitiesAsync(request);
 
             var fetchedTrades = new List<FSTrade>();
-            using var doc = JsonDocument.Parse(content);
-            if (doc.RootElement.ValueKind == JsonValueKind.Array)
+            
+            var groupedFills = activities
+                .Where(a => a.ActivityType == AccountActivityType.Fill && a.ActivityDateTimeUtc.Date >= startOfDay)
+                .Where(a => a.Symbol != null && a.Quantity != null && a.Price != null && a.OrderId != null)
+                .GroupBy(a => a.OrderId!.Value);
+
+            foreach (var group in groupedFills)
             {
-                foreach (var activity in doc.RootElement.EnumerateArray())
+                var firstActivity = group.First();
+                var direction = firstActivity.Side == OrderSide.Buy ? TradeDirection.BUY : TradeDirection.SELL;
+                
+                var totalQuantity = group.Sum(a => a.Quantity!.Value);
+                var vwap = group.Sum(a => a.Quantity!.Value * a.Price!.Value) / totalQuantity;
+                
+                // Use the maximum DateTime from the group (latest fill)
+                var lastFillDate = group.Max(a => a.ActivityDateTimeUtc);
+
+                fetchedTrades.Add(new FSTrade
                 {
-                    var requiredProperties = new[] { "side", "symbol", "price", "cum_qty", "order_id", "transaction_time", "order_status" };
-                    var missingProperties = requiredProperties.Where(p => !activity.TryGetProperty(p, out _)).ToList();
-                    
-                    if (missingProperties.Any())
-                    {
-                        throw new Exception($"Missing required properties in Alpaca activity: {string.Join(", ", missingProperties)}");
-                    }
-
-                    string orderStatus = activity.GetProperty("order_status").GetString()!;
-                    if (!string.Equals(orderStatus, "filled", StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    string side = activity.GetProperty("side").GetString()!;
-                    var direction = side.Equals("buy", StringComparison.OrdinalIgnoreCase) ? TradeDirection.BUY : TradeDirection.SELL;
-                    
-                    string ticker = activity.GetProperty("symbol").GetString()!;
-                    
-                    var priceElem = activity.GetProperty("price");
-                    decimal tradePrice = priceElem.ValueKind == JsonValueKind.Number ? priceElem.GetDecimal() : decimal.Parse(priceElem.GetString()!);
-                    
-                    var qtyElem = activity.GetProperty("cum_qty");
-                    decimal quantity = qtyElem.ValueKind == JsonValueKind.Number ? qtyElem.GetDecimal() : decimal.Parse(qtyElem.GetString()!);
-                    
-                    string externalId = activity.GetProperty("order_id").GetString()!;
-                    
-                    string transactionTimeStr = activity.GetProperty("transaction_time").GetString()!;
-                    if (!DateTime.TryParse(transactionTimeStr, out var tradeDate))
-                    {
-                        throw new Exception($"Invalid 'transaction_time' format in Alpaca activity: {transactionTimeStr}");
-                    }
-                    tradeDate = tradeDate.ToUniversalTime();
-
-                    if (tradeDate.Date < DateTime.UtcNow.Date) continue;
-
-                    fetchedTrades.Add(new FSTrade
-                    {
-                        Id = Guid.NewGuid(),
-                        FSUserId = userId,
-                        Ticker = ticker,
-                        TradePrice = tradePrice,
-                        TradeDirection = direction,
-                        Quantity = quantity,
-                        Commission = 0m, // Alpaca is typically zero commission
-                        Date = tradeDate,
-                        ExternalId = externalId,
-                        SharesLeft = quantity
-                    });
-                }
+                    Id = Guid.NewGuid(),
+                    FSUserId = userId,
+                    Ticker = firstActivity.Symbol!,
+                    TradePrice = vwap,
+                    TradeDirection = direction,
+                    Quantity = totalQuantity,
+                    Commission = 0m,
+                    Date = lastFillDate,
+                    ExternalId = group.Key.ToString(),
+                    SharesLeft = totalQuantity
+                });
             }
 
             return fetchedTrades;
@@ -250,30 +161,9 @@ namespace Finsight.Services
 
         public async Task<decimal> GetUninvestedCashAsync(string userId)
         {
-            var (apiKey, apiSecret, baseUrl) = await GetAlpacaConfigAsync(userId);
-            var request = CreateRequest(HttpMethod.Get, $"{baseUrl}/v2/account", apiKey, apiSecret);
-            var response = await _httpClient.SendAsync(request);
-            var content = await response.Content.ReadAsStringAsync();
-
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new Exception($"Failed to fetch account info from Alpaca: {content}");
-            }
-
-            using var doc = JsonDocument.Parse(content);
-            if (doc.RootElement.TryGetProperty("cash", out var cashProp))
-            {
-                return GetDecimalSafe(cashProp);
-            }
-
-            return 0m;
-        }
-
-        private decimal GetDecimalSafe(JsonElement element)
-        {
-            if (element.ValueKind == JsonValueKind.Number) return element.GetDecimal();
-            if (element.ValueKind == JsonValueKind.String && decimal.TryParse(element.GetString(), out decimal d)) return d;
-            return 0m;
+            var client = await GetAlpacaClientAsync(userId);
+            var account = await client.GetAccountAsync();
+            return account.TradableCash;
         }
     }
 }
