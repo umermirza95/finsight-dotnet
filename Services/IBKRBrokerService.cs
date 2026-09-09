@@ -423,7 +423,8 @@ namespace Finsight.Services
                         Quantity = quantity,
                         Commission = commission,
                         Date = tradeTimeUtc,
-                        ExternalId = externalId
+                        ExternalId = externalId,
+                        SharesLeft = quantity
                     });
                 }
             }
@@ -447,7 +448,8 @@ namespace Finsight.Services
                         Quantity = totalQuantity,
                         Commission = totalCommission,
                         Date = g.Max(t => t.Date),
-                        ExternalId = firstTrade.ExternalId
+                        ExternalId = firstTrade.ExternalId,
+                        SharesLeft = totalQuantity
                     };
                 })
                 .ToList();

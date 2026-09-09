@@ -26,6 +26,9 @@ namespace Finsight.Models
         public required decimal Quantity { get; set; }
 
         [Column(TypeName = "decimal(18,2)")]
+        public required decimal SharesLeft { get; set; }
+
+        [Column(TypeName = "decimal(18,2)")]
         public required decimal Commission { get; set; }
 
         public required DateTime Date { get; set; }

@@ -39,7 +39,7 @@ namespace Finsight.Services
                 throw new Exception("Alpaca API credentials are not configured for this user.");
             }
 
-            var baseUrl = _configuration["Alpaca:TradingBaseUrl"] ?? "https://paper-api.alpaca.markets";
+            var baseUrl =  "https://api.alpaca.markets";
             return (config.AlpacaApiKey, config.AlpacaApiSecret, baseUrl);
         }
 
@@ -81,7 +81,8 @@ namespace Finsight.Services
                 side = direction == TradeDirection.BUY ? "buy" : "sell",
                 type = "limit",
                 time_in_force = "gtc",
-                limit_price = (double)limitPrice
+                limit_price = (double)limitPrice,
+                extended_hours=true
             };
 
             var request = CreateRequest(HttpMethod.Post, $"{baseUrl}/v2/orders", apiKey, apiSecret, payload);
@@ -175,9 +176,9 @@ namespace Finsight.Services
         {
             var (apiKey, apiSecret, baseUrl) = await GetAlpacaConfigAsync(userId);
             
-            // Fetch closed orders from today
+            // Fetch trade FILL activities from today
             var startOfDay = DateTime.UtcNow.Date.ToString("o");
-            var request = CreateRequest(HttpMethod.Get, $"{baseUrl}/v2/orders?status=closed&after={startOfDay}", apiKey, apiSecret);
+            var request = CreateRequest(HttpMethod.Get, $"{baseUrl}/v2/account/activities/FILL?after={startOfDay}", apiKey, apiSecret);
             var response = await _httpClient.SendAsync(request);
             var content = await response.Content.ReadAsStringAsync();
 
@@ -190,25 +191,41 @@ namespace Finsight.Services
             using var doc = JsonDocument.Parse(content);
             if (doc.RootElement.ValueKind == JsonValueKind.Array)
             {
-                foreach (var orderItem in doc.RootElement.EnumerateArray())
+                foreach (var activity in doc.RootElement.EnumerateArray())
                 {
-                    string status = orderItem.TryGetProperty("status", out var st) ? st.GetString() ?? "" : "";
-                    if (!status.Equals("filled", StringComparison.OrdinalIgnoreCase)) continue;
-
-                    string side = orderItem.TryGetProperty("side", out var s) ? s.GetString() ?? "" : "";
-                    var direction = side.Equals("buy", StringComparison.OrdinalIgnoreCase) ? TradeDirection.BUY : TradeDirection.SELL;
-                    string ticker = orderItem.TryGetProperty("symbol", out var sym) ? sym.GetString() ?? "" : "";
+                    var requiredProperties = new[] { "side", "symbol", "price", "cum_qty", "order_id", "transaction_time", "order_status" };
+                    var missingProperties = requiredProperties.Where(p => !activity.TryGetProperty(p, out _)).ToList();
                     
-                    decimal tradePrice = orderItem.TryGetProperty("filled_avg_price", out var p) ? GetDecimalSafe(p) : 0m;
-                    decimal quantity = orderItem.TryGetProperty("filled_qty", out var q) ? GetDecimalSafe(q) : 0m;
-                    string externalId = orderItem.TryGetProperty("id", out var id) ? id.GetString() ?? "" : "";
-                    
-                    var filledAtStr = orderItem.TryGetProperty("filled_at", out var fa) ? fa.GetString() : null;
-                    DateTime tradeDate = DateTime.UtcNow;
-                    if (!string.IsNullOrEmpty(filledAtStr) && DateTime.TryParse(filledAtStr, out var parsedDate))
+                    if (missingProperties.Any())
                     {
-                        tradeDate = parsedDate;
+                        throw new Exception($"Missing required properties in Alpaca activity: {string.Join(", ", missingProperties)}");
                     }
+
+                    string orderStatus = activity.GetProperty("order_status").GetString()!;
+                    if (!string.Equals(orderStatus, "filled", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    string side = activity.GetProperty("side").GetString()!;
+                    var direction = side.Equals("buy", StringComparison.OrdinalIgnoreCase) ? TradeDirection.BUY : TradeDirection.SELL;
+                    
+                    string ticker = activity.GetProperty("symbol").GetString()!;
+                    
+                    var priceElem = activity.GetProperty("price");
+                    decimal tradePrice = priceElem.ValueKind == JsonValueKind.Number ? priceElem.GetDecimal() : decimal.Parse(priceElem.GetString()!);
+                    
+                    var qtyElem = activity.GetProperty("cum_qty");
+                    decimal quantity = qtyElem.ValueKind == JsonValueKind.Number ? qtyElem.GetDecimal() : decimal.Parse(qtyElem.GetString()!);
+                    
+                    string externalId = activity.GetProperty("order_id").GetString()!;
+                    
+                    string transactionTimeStr = activity.GetProperty("transaction_time").GetString()!;
+                    if (!DateTime.TryParse(transactionTimeStr, out var tradeDate))
+                    {
+                        throw new Exception($"Invalid 'transaction_time' format in Alpaca activity: {transactionTimeStr}");
+                    }
+                    tradeDate = tradeDate.ToUniversalTime();
 
                     if (tradeDate.Date < DateTime.UtcNow.Date) continue;
 
@@ -222,7 +239,8 @@ namespace Finsight.Services
                         Quantity = quantity,
                         Commission = 0m, // Alpaca is typically zero commission
                         Date = tradeDate,
-                        ExternalId = externalId
+                        ExternalId = externalId,
+                        SharesLeft = quantity
                     });
                 }
             }

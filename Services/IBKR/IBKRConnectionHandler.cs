@@ -250,7 +250,8 @@ namespace Finsight.Services.IBKR
                         Quantity = payload.Size,
                         Date = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, now.Second, DateTimeKind.Utc),
                         ExternalId = payload.OrderId.ToString(),
-                        Commission = payload.Commission
+                        Commission = payload.Commission,
+                        SharesLeft = payload.Size
                     };
                     
                     await tradingService.HandleTradeExecutionAsync(trade);

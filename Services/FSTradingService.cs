@@ -49,24 +49,10 @@ namespace Finsight.Services
             var existingTradesDict = existingTrades.ToDictionary(t => t.ExternalId);
 
             var newTrades = new List<FSTrade>();
-            var updatedTrades = new List<FSTrade>();
 
             foreach (var fetchedTrade in distinctFetchedTrades)
             {
-                if (existingTradesDict.TryGetValue(fetchedTrade.ExternalId, out var existingTrade))
-                {
-                    if (existingTrade.Commission != fetchedTrade.Commission ||
-                        existingTrade.TradePrice != fetchedTrade.TradePrice ||
-                        existingTrade.Quantity != fetchedTrade.Quantity)
-                    {
-                        existingTrade.Commission = fetchedTrade.Commission;
-                        existingTrade.TradePrice = fetchedTrade.TradePrice;
-                        existingTrade.Quantity = fetchedTrade.Quantity;
-                        existingTrade.Date = fetchedTrade.Date;
-                        updatedTrades.Add(existingTrade);
-                    }
-                }
-                else
+                if (!existingTradesDict.ContainsKey(fetchedTrade.ExternalId))
                 {
                     newTrades.Add(fetchedTrade);
                 }
@@ -75,38 +61,12 @@ namespace Finsight.Services
             if (newTrades.Any())
             {
                 _dbContext.FSTrades.AddRange(newTrades);
-            }
-
-            if (updatedTrades.Any())
-            {
-                var updatedTradeIds = updatedTrades.Select(t => t.ExternalId).ToList();
-                
-                var closedTradesToRecalculate = await _dbContext.FSClosedTrades
-                    .Include(c => c.OpenTrade)
-                    .Include(c => c.CloseTrade)
-                    .Include(c => c.InsurancePayout)
-                    .Where(c => c.FSUserId == userId && 
-                               (updatedTradeIds.Contains(c.OrderOpenId) || updatedTradeIds.Contains(c.OrderCloseId)))
-                    .ToListAsync();
-
-                foreach (var closedTrade in closedTradesToRecalculate)
-                {
-                    closedTrade.RecalculateNetProfit();
-                    if (closedTrade.InsurancePayout != null)
-                    {
-                        closedTrade.NetProfit += closedTrade.InsurancePayout.CoveredAmount;
-                    }
-                }
-            }
-
-            if (newTrades.Any() || updatedTrades.Any())
-            {
                 await _dbContext.SaveChangesAsync();
-                _logger.LogInformation($"Inserted {newTrades.Count} new trades, updated {updatedTrades.Count} existing trades for user {userId}.");
+                _logger.LogInformation($"Inserted {newTrades.Count} new trades for user {userId}.");
             }
             else
             {
-                _logger.LogInformation($"No new trades to insert or update for today for user {userId}.");
+                _logger.LogInformation($"No new trades to insert for today for user {userId}.");
             }
         }
 
@@ -114,8 +74,10 @@ namespace Finsight.Services
         {
             var unclosedTrades = await _dbContext.FSTrades
                 .Where(t => t.FSUserId == userId
-                && !_dbContext.FSClosedTrades.Any(c => c.OrderOpenId == t.ExternalId || c.OrderCloseId == t.ExternalId))
+                && (!_dbContext.FSClosedTrades.Any(c => c.OrderOpenId == t.ExternalId || c.OrderCloseId == t.ExternalId) || t.SharesLeft > 0))
                 .ToListAsync();
+
+        
 
             var newClosedTrades = new List<FSClosedTrade>();
             var groupedByTicker = unclosedTrades.GroupBy(t => t.Ticker);
@@ -123,41 +85,56 @@ namespace Finsight.Services
             foreach (var group in groupedByTicker)
             {
                 // LIFO for Buys: Last In (most recent date) First Out
-                var buys = group.Where(t => t.TradeDirection == TradeDirection.BUY).OrderByDescending(t => t.Date).ToList();
+                var buys = group.Where(t => t.TradeDirection == TradeDirection.BUY && t.SharesLeft > 0).OrderByDescending(t => t.Date).ToList();
                 // Process sells chronologically
-                var sells = group.Where(t => t.TradeDirection == TradeDirection.SELL).OrderBy(t => t.Date).ToList();
+                var sells = group.Where(t => t.TradeDirection == TradeDirection.SELL && t.SharesLeft > 0).OrderBy(t => t.Date).ToList();
 
                 foreach (var sell in sells)
                 {
-                    // Find the most recent buy that happened on or before the sell date (LIFO)
-                    var lifoBuy = buys.FirstOrDefault(b => b.Date <= sell.Date);
-
-                    FSTrade? matchedBuy = null;
-
-                    if (lifoBuy != null)
+                    while (sell.SharesLeft > 0)
                     {
-                        // Check if LIFO matching creates a profit
-                        if (sell.TradePrice >= lifoBuy.TradePrice)
+                        // Find the most recent buy that happened on or before the sell date (LIFO)
+                        var lifoBuy = buys.FirstOrDefault(b => b.Date <= sell.Date && b.SharesLeft > 0);
+
+                        FSTrade? matchedBuy = null;
+
+                        if (lifoBuy != null)
                         {
-                            // Profit (or break-even): keep LIFO match
-                            matchedBuy = lifoBuy;
+                            // Check if LIFO matching creates a profit
+                            if (sell.TradePrice >= lifoBuy.TradePrice)
+                            {
+                                // Profit (or break-even): keep LIFO match
+                                matchedBuy = lifoBuy;
+                            }
                         }
-                    }
 
-                    if (matchedBuy != null)
-                    {
-                        var closedTrade = new FSClosedTrade
+                        if (matchedBuy != null)
                         {
-                            Id = Guid.NewGuid(),
-                            FSUserId = userId,
-                            OrderOpenId = matchedBuy.ExternalId,
-                            OrderCloseId = sell.ExternalId
-                        };
-                        closedTrade.CalculateNetProfit(matchedBuy, sell);
-                        newClosedTrades.Add(closedTrade);
+                            decimal matchedQuantity = Math.Min(sell.SharesLeft, matchedBuy.SharesLeft);
 
-                        // Remove matched buy so it's not matched again
-                        buys.Remove(matchedBuy);
+                            sell.SharesLeft -= matchedQuantity;
+                            matchedBuy.SharesLeft -= matchedQuantity;
+
+                            var closedTrade = new FSClosedTrade
+                            {
+                                Id = Guid.NewGuid(),
+                                FSUserId = userId,
+                                OrderOpenId = matchedBuy.ExternalId,
+                                OrderCloseId = sell.ExternalId
+                            };
+                            closedTrade.CalculateNetProfit(matchedBuy, sell, matchedQuantity);
+                            newClosedTrades.Add(closedTrade);
+
+                            // Remove matched buy if it's fully matched so it's not matched again
+                            if (matchedBuy.SharesLeft == 0)
+                            {
+                                buys.Remove(matchedBuy);
+                            }
+                        }
+                        else
+                        {
+                            break;
+                        }
                     }
                 }
             }
@@ -170,6 +147,10 @@ namespace Finsight.Services
             }
             else
             {
+                if (_dbContext.ChangeTracker.HasChanges())
+                {
+                    await _dbContext.SaveChangesAsync();
+                }
                 _logger.LogInformation($"No new trade matches found for user {userId}.");
             }
         }
@@ -227,8 +208,9 @@ namespace Finsight.Services
                 // Assuming all opening trades are BUY based on user request "Safe to assume there will never be Short trades"
                 var buyPrice = c.OpenTrade!.TradePrice;
                 var sellPrice = c.CloseTrade!.TradePrice;
-                var quantity = c.OpenTrade.Quantity;
-                var totalComm = c.OpenTrade.Commission + c.CloseTrade.Commission;
+                var quantity = c.ClosedQuantity > 0 ? c.ClosedQuantity : c.OpenTrade.Quantity;
+                var totalComm = (c.OpenTrade.Quantity > 0 ? (c.OpenTrade.Commission * quantity / c.OpenTrade.Quantity) : 0) + 
+                                (c.CloseTrade.Quantity > 0 ? (c.CloseTrade.Commission * quantity / c.CloseTrade.Quantity) : 0);
 
                 return new ClosedTradeResponse
                 {
@@ -399,7 +381,17 @@ namespace Finsight.Services
                 OrderOpenId = command.BuyOrderId,
                 OrderCloseId = command.SellOrderId
             };
-            closedTrade.CalculateNetProfit(buyTrade, sellTrade);
+
+            decimal matchedQuantity = Math.Min(
+                buyTrade.SharesLeft > 0 ? buyTrade.SharesLeft : buyTrade.Quantity, 
+                sellTrade.SharesLeft > 0 ? sellTrade.SharesLeft : sellTrade.Quantity);
+
+            if (matchedQuantity <= 0) matchedQuantity = Math.Min(buyTrade.Quantity, sellTrade.Quantity);
+
+            buyTrade.SharesLeft = Math.Max(0, buyTrade.SharesLeft - matchedQuantity);
+            sellTrade.SharesLeft = Math.Max(0, sellTrade.SharesLeft - matchedQuantity);
+
+            closedTrade.CalculateNetProfit(buyTrade, sellTrade, matchedQuantity);
 
             if (closedTrade.NetProfit < 0)
             {
