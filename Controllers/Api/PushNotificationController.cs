@@ -9,8 +9,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Finsight.Controllers.Api
 {
     [ApiController]
-    [Route("api/push-notifications")]
-    [Authorize]
+    [Route("push-notifications")]
+    [Authorize(AuthenticationSchemes = "JwtBearer")]
     public class PushNotificationController : ControllerBase
     {
         private readonly IDbContextFactory<AppDbContext> _dbFactory;

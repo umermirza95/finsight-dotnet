@@ -117,7 +117,7 @@ namespace Finsight.Services
         public async Task<List<FSTrade>> FetchTodayTradesAsync(string userId)
         {
             var client = await GetAlpacaClientAsync(userId);
-            var startOfDay = DateTime.UtcNow.Date;
+            var startOfDay = DateTime.UtcNow.Date.AddDays(-2);
 
             var request = new AccountActivitiesRequest(AccountActivityType.Fill);
 
