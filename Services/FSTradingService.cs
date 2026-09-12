@@ -244,7 +244,7 @@ namespace Finsight.Services
             }
             catch (DbUpdateException ex)
             {
-                _logger.LogError(ex, $"Error saving trade {trade.ExternalId} for user {trade.FSUserId}. Already processed.");
+                _logger.LogError(ex, $"Error saving trade {trade.ExternalId} for user {trade.FSUserId}: {ex.Message}");
                 return;
             }
 
@@ -260,58 +260,8 @@ namespace Finsight.Services
                 return;
             }
 
-            await _messagingService.SendMessageAsync($"Trade executed: {trade.TradeDirection} {trade.Quantity} shares of {trade.Ticker} at ${trade.TradePrice}. Auto-trading is enabled, placing limit orders...");
 
-            decimal shares = config.SharesPerTranche;
-            decimal distancePercentage = config.DistancePerTranche / 100m;
-
-            await _brokerService.CancelAllOrdersAsync(trade.FSUserId);
-
-            var targetTicker = !string.IsNullOrWhiteSpace(config.Ticker) ? config.Ticker : trade.Ticker;
-
-            if (trade.TradeDirection == TradeDirection.BUY)
-            {
-                decimal distance = trade.TradePrice * distancePercentage;
-                decimal targetSellPrice = Math.Round(trade.TradePrice + distance, 2);
-
-                await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.SELL, targetSellPrice, shares);
-
-                decimal targetBuyPrice = Math.Round(trade.TradePrice - distance, 2);
-                await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, targetBuyPrice, shares);
-            }
-            else // SELL
-            {
-
-                // Get most recent open buy trade from the database
-                var mostRecentBuyTrade = await _dbContext.FSTrades
-                    .Where(t => t.Ticker == targetTicker && t.TradeDirection == TradeDirection.BUY && !_dbContext.FSClosedTrades.Any(c => c.OrderOpenId == t.ExternalId))
-                    .OrderByDescending(t => t.Date)
-                    .FirstOrDefaultAsync();
-
-                if (mostRecentBuyTrade == null)
-                {
-                    await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, Math.Round(trade.TradePrice, 2), shares);
-                }
-                else
-                {
-                    decimal distance = mostRecentBuyTrade.TradePrice * distancePercentage;
-
-                    if (mostRecentBuyTrade.TradePrice - distance > trade.TradePrice)
-                    {
-                        await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, Math.Round(trade.TradePrice, 2), shares);
-                    }
-                    else
-                    {
-                        decimal targetBuyPrice = Math.Round(mostRecentBuyTrade.TradePrice - distance, 2);
-                        decimal targetSellPrice = Math.Round(mostRecentBuyTrade.TradePrice + distance, 2);
-
-                        await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.BUY, targetBuyPrice, shares);
-                        await _brokerService.PlaceLimitOrderAsync(trade.FSUserId, targetTicker, TradeDirection.SELL, targetSellPrice, mostRecentBuyTrade.Quantity);
-                    }
-
-                }
-            }
-
+            await OpenLimitOrdersAsync(trade.FSUserId);
         }
         public async Task<FSTradingConfig?> GetTradingConfigAsync(string userId)
         {
