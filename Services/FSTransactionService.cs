@@ -17,17 +17,28 @@ namespace Finsight.Services
         {
             using var _context = await _dbFactory.CreateDbContextAsync();
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId) ?? throw new Exception("User not found");
+            
+            var targetCurrency = user.DefaultCurrency;
+            if (query.WalletId.HasValue)
+            {
+                var wallet = await _context.FSWallets.FirstOrDefaultAsync(w => w.Id == query.WalletId.Value && w.FSUserId == userId);
+                if (wallet != null)
+                {
+                    targetCurrency = wallet.FSCurrencyCode;
+                }
+            }
+
             var result = await (
                 from t in _context.Transactions
                 from r in _context.FSExchangeRates
-                .Where(r => r.From == t.FSCurrencyCode && r.To == user.DefaultCurrency && r.Date == t.Date)
+                .Where(r => r.From == t.FSCurrencyCode && r.To == targetCurrency && r.Date == t.Date)
                 .DefaultIfEmpty()
                 where t.FSUserId == userId
                 && t.Date >= query.From
                 && t.Date <= query.To
                 && (!query.Type.HasValue || t.Type == query.Type)
                 && (query.CategoryIds == null || query.CategoryIds.Count == 0 || query.CategoryIds.Contains(t.FSCategoryId))
-                && (t.FSWalletId == query.WalletId)
+                && (query.WalletId == null || t.FSWalletId == query.WalletId)
                 && (string.IsNullOrEmpty(query.SearchQuery) || EF.Functions.ILike(t.Comment!, $"%{query.SearchQuery}%"))
                 select new
                 {
@@ -42,7 +53,7 @@ namespace Finsight.Services
             var missingRates = result
                 .Where(x =>
                     x.Rate == null &&
-                    !string.Equals(x.Transaction.FSCurrencyCode, user.DefaultCurrency, StringComparison.OrdinalIgnoreCase))
+                    !string.Equals(x.Transaction.FSCurrencyCode, targetCurrency, StringComparison.OrdinalIgnoreCase))
                 .Select(x => new
                 {
                     x.Transaction.Id,
@@ -62,7 +73,7 @@ namespace Finsight.Services
             {
                 Id = x.Transaction.Id,
                 BaseAmount = x.Transaction.Amount,
-                Amount = x.Transaction.FSCurrencyCode != user.DefaultCurrency && x.Rate != null
+                Amount = x.Transaction.FSCurrencyCode != targetCurrency && x.Rate != null
                     ? x.Transaction.Amount * x.Rate.ExchangeRate
                     : x.Transaction.Amount,
                 CategoryId = x.Transaction.FSCategoryId,

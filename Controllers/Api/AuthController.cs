@@ -49,7 +49,13 @@ namespace Finsight.Controller
 
                 return Ok(new
                 {
-                    token
+                    token,
+                    user = new Finsight.DTOs.FSUserDTO
+                    {
+                        Id = user.Id,
+                        Email = user.Email ?? string.Empty,
+                        DefaultCurrency = user.DefaultCurrency ?? "USD"
+                    }
                 });
             }
             catch (Exception ex)
