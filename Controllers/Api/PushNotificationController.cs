@@ -5,6 +5,7 @@ using Finsight.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Finsight.Interfaces;
 
 namespace Finsight.Controllers.Api
 {
@@ -14,10 +15,12 @@ namespace Finsight.Controllers.Api
     public class PushNotificationController : ControllerBase
     {
         private readonly IDbContextFactory<AppDbContext> _dbFactory;
+        private readonly IPushNotificationService _pushNotificationService;
 
-        public PushNotificationController(IDbContextFactory<AppDbContext> dbFactory)
+        public PushNotificationController(IDbContextFactory<AppDbContext> dbFactory, IPushNotificationService pushNotificationService)
         {
             _dbFactory = dbFactory;
+            _pushNotificationService = pushNotificationService;
         }
 
         [HttpPost("subscribe")]
@@ -82,6 +85,24 @@ namespace Finsight.Controllers.Api
             }
 
             return Ok(new { message = "Push subscription removed successfully." });
+        }
+
+        [HttpPost("test-send")]
+        public async Task<IActionResult> TestSend([FromQuery] string? payload)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized();
+
+            var notificationData = new {
+                title = "Finsight Test",
+                body = payload ?? "This is a test notification!",
+                url = "/"
+            };
+            var jsonPayload = System.Text.Json.JsonSerializer.Serialize(notificationData);
+
+            await _pushNotificationService.SendNotificationAsync(userId, jsonPayload);
+            return Ok(new { message = "Test notification request processed." });
         }
     }
 }
