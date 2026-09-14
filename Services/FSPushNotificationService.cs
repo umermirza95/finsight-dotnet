@@ -76,7 +76,7 @@ namespace Finsight.Services
                     }
                     else
                     {
-                        _logger.LogError(ex, "Failed to send push notification. Status code: {StatusCode}", ex.StatusCode);
+                        _logger.LogError(ex, "Failed to send push notification. Error: {Message}", ex.Message);
                     }
                 }
                 catch (Exception ex)

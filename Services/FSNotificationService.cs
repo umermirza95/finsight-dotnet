@@ -49,12 +49,12 @@ namespace Finsight.Services
 
                 if (trade.TradeDirection == TradeDirection.BUY)
                 {
-                    title = "BUY Trade Executed 💰";
+                    title = "BUY Trade Executed";
                     body = $"Bought {trade.Quantity} shares of {trade.Ticker} at ${trade.TradePrice:F2}.";
                 }
                 else
                 {
-                    title = "SELL Trade Executed 🤑";
+                    title = "SELL Trade Executed";
                     body = $"Sold {trade.Quantity} shares of {trade.Ticker} at ${trade.TradePrice:F2}.";
                 }
 

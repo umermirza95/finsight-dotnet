@@ -131,7 +131,7 @@ namespace Finsight.Services
         private async void HandleTradeUpdateAsync(string userId, ITradeUpdate tradeUpdate)
         {
             //log raw data
-            _logger.LogInformation($"Trade update for user {userId}: {System.Text.Json.JsonSerializer.Serialize(tradeUpdate)}");
+            
             try
             {
                 if (tradeUpdate.Event != TradeEvent.Fill)
@@ -145,6 +145,7 @@ namespace Finsight.Services
                 {
                     return;
                 }
+                _logger.LogInformation($"Trade update for user {userId}: {System.Text.Json.JsonSerializer.Serialize(tradeUpdate)}");
 
                 // Throw exception if mandatory value is missing.
                 var missingFields = new System.Collections.Generic.List<string>();
