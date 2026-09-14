@@ -26,6 +26,7 @@ public class AppDbContext : IdentityDbContext<FSUser>
     public DbSet<FSInjectedCapital> FSInjectedCapitals { get; set; }
     public DbSet<FSWallet> FSWallets { get; set; }
     public DbSet<FSPushSubscription> FSPushSubscriptions { get; set; }
+    public DbSet<FSNotification> FSNotifications { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -309,6 +310,15 @@ public class AppDbContext : IdentityDbContext<FSUser>
                   .WithMany()
                   .HasForeignKey(ps => ps.FSUserId)
                   .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<FSNotification>(entity =>
+        {
+            entity.HasOne<FSUser>()
+                  .WithMany()
+                  .HasForeignKey(n => n.FSUserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.Property(n => n.Type).HasConversion<string>();
         });
     }
 }

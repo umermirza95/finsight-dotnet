@@ -55,7 +55,7 @@ namespace Finsight.Services
             foreach (var config in configs)
             {
                 if (config.FSUserId == null) continue;
-                
+
                 _configs.TryAdd(config.FSUserId, config);
                 await ConnectUserAsync(config.FSUserId, config.AlpacaApiKey!, config.AlpacaApiSecret!, stoppingToken);
             }
@@ -75,7 +75,7 @@ namespace Finsight.Services
 
                 client.OnTradeUpdate += (tradeUpdate) => HandleTradeUpdateAsync(userId, tradeUpdate);
                 client.OnError += (ex) => HandleError(userId, ex);
-                
+
                 var authStatus = await client.ConnectAndAuthenticateAsync(stoppingToken);
 
                 if (authStatus == AuthStatus.Authorized)
@@ -99,7 +99,7 @@ namespace Finsight.Services
         private void HandleError(string userId, Exception ex)
         {
             _logger.LogError(ex, $"Alpaca streaming client error for user {userId}. Attempting to reconnect.");
-            
+
             if (_clients.TryRemove(userId, out var client))
             {
                 client.Dispose();
@@ -130,6 +130,8 @@ namespace Finsight.Services
 
         private async void HandleTradeUpdateAsync(string userId, ITradeUpdate tradeUpdate)
         {
+            //log raw data
+            _logger.LogInformation($"Trade update for user {userId}: {System.Text.Json.JsonSerializer.Serialize(tradeUpdate)}");
             try
             {
                 if (tradeUpdate.Event != TradeEvent.Fill)
@@ -138,12 +140,12 @@ namespace Finsight.Services
                 }
 
                 var order = tradeUpdate.Order;
-                
+
                 if (order.OrderStatus != OrderStatus.Filled)
                 {
                     return;
                 }
-                
+
                 // Throw exception if mandatory value is missing.
                 var missingFields = new System.Collections.Generic.List<string>();
 
@@ -155,6 +157,7 @@ namespace Finsight.Services
 
                 if (missingFields.Any())
                 {
+                    _logger.LogError($"Missing mandatory values in TradeUpdate for user {userId}: {string.Join(", ", missingFields)}"); 
                     throw new Exception($"Missing mandatory values in TradeUpdate: {string.Join(", ", missingFields)}");
                 }
 
@@ -175,8 +178,9 @@ namespace Finsight.Services
                 };
 
                 using var scope = _scopeFactory.CreateScope();
+                var notificationService = scope.ServiceProvider.GetRequiredService<IFSNotificationService>();
+                await notificationService.CreateTradeNotificationAsync(fsTrade);
                 var tradingService = scope.ServiceProvider.GetRequiredService<ITradingService>();
-
                 await tradingService.HandleTradeExecutionAsync(fsTrade);
             }
             catch (Exception ex)

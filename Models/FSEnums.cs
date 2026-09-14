@@ -48,4 +48,10 @@ namespace Finsight.Enums
         IBKR,
         Alpaca
     }
+
+    public enum FSNotificationType
+    {
+        Trade,
+        System
+    }
 }
