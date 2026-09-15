@@ -75,7 +75,7 @@ namespace Finsight.Controller
                 var availableProfit = await _tradingService.GetAvailableBalanceAsync(userId);
                 cashLeft += availableProfit;
 
-                return Ok(new { trades = openTrades, cashLeft = cashLeft });
+                return Ok(new { trades = openTrades, cashLeft = cashLeft, totalCapital = totalCapital });
             }
             catch (Exception ex)
             {
