@@ -483,6 +483,11 @@ namespace Finsight.Services
             throw new Exception("Could not find cashbalance in the ledger response.");
         }
 
+        public Task<List<FSProfitDistribution>> FetchBrokerFeesAsync(string userId)
+        {
+            return Task.FromResult(new List<FSProfitDistribution>());
+        }
+
         private decimal GetDecimalSafe(JsonElement element)
         {
             if (element.ValueKind == JsonValueKind.Number) return element.GetDecimal();

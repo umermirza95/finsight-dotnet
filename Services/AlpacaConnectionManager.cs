@@ -21,17 +21,25 @@ namespace Finsight.Services
         private readonly ConcurrentDictionary<string, IAlpacaStreamingClient> _clients;
         // Keep track of connected users to manage reconnections
         private readonly ConcurrentDictionary<string, FSTradingConfig> _configs;
+        private readonly IHostEnvironment _env;
 
-        public AlpacaConnectionManager(ILogger<AlpacaConnectionManager> logger, IServiceScopeFactory scopeFactory)
+        public AlpacaConnectionManager(ILogger<AlpacaConnectionManager> logger, IServiceScopeFactory scopeFactory, IHostEnvironment env)
         {
             _logger = logger;
             _scopeFactory = scopeFactory;
             _clients = new ConcurrentDictionary<string, IAlpacaStreamingClient>();
             _configs = new ConcurrentDictionary<string, FSTradingConfig>();
+            _env = env;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            if (_env.IsDevelopment())
+            {
+                _logger.LogInformation("AlpacaConnectionManager is disabled in local/development environment.");
+                return;
+            }
+
             _logger.LogInformation("AlpacaConnectionManager is starting.");
 
             await InitializeConnectionsAsync(stoppingToken);

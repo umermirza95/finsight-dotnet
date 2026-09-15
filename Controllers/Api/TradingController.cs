@@ -30,6 +30,7 @@ namespace Finsight.Controller
 
                 await _tradingService.FetchTodayTradesAsync(userId);
                 await _tradingService.MatchClosedTradesAsync(userId);
+                await _tradingService.SyncBrokerFeeAsync(userId);
                 return Ok(new { message = "Trades synchronized successfully." });
             }
             catch (Exception ex)

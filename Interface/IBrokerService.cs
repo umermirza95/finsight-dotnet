@@ -21,5 +21,6 @@ namespace Finsight.Interfaces
         Task CancelOrderAsync(string userId, string permId);
         Task CancelAllOrdersAsync(string userId);
         Task<decimal> GetUninvestedCashAsync(string userId);
+        Task<List<FSProfitDistribution>> FetchBrokerFeesAsync(string userId);
     }
 }

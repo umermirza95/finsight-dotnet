@@ -119,14 +119,15 @@ namespace Finsight.Services
             var client = await GetAlpacaClientAsync(userId);
             var startOfDay = DateTime.UtcNow.Date.AddDays(-2);
 
-            var request = new AccountActivitiesRequest(AccountActivityType.Fill);
+            var request = new AccountActivitiesRequest(AccountActivityType.Fill)
+                .WithInterval(new Interval<DateTime>(startOfDay, DateTime.UtcNow));
 
             var activities = await client.ListAccountActivitiesAsync(request);
 
             var fetchedTrades = new List<FSTrade>();
             
             var groupedFills = activities
-                .Where(a => a.ActivityType == AccountActivityType.Fill && a.ActivityDateTimeUtc.Date >= startOfDay)
+                .Where(a => a.ActivityType == AccountActivityType.Fill)
                 .Where(a => a.Symbol != null && a.Quantity != null && a.Price != null && a.OrderId != null)
                 .GroupBy(a => a.OrderId!.Value);
 
@@ -164,6 +165,44 @@ namespace Finsight.Services
             var client = await GetAlpacaClientAsync(userId);
             var account = await client.GetAccountAsync();
             return account.TradableCash;
+        }
+
+        public async Task<List<FSProfitDistribution>> FetchBrokerFeesAsync(string userId)
+        {
+            var client = await GetAlpacaClientAsync(userId);
+            var threeDaysAgo = DateTime.UtcNow.Date.AddDays(-3);
+            var request = new AccountActivitiesRequest(AccountActivityType.FeeInUsd)
+                .WithInterval(new Interval<DateTime>(threeDaysAgo, DateTime.UtcNow));
+                
+            var activities = await client.ListAccountActivitiesAsync(request);
+            
+            var feeDistributions = new List<FSProfitDistribution>();
+
+            foreach (var activity in activities)
+            {
+                if (string.IsNullOrEmpty(activity.ActivityId)) continue;
+
+                Guid id = Guid.TryParse(activity.ActivityId, out var parsedGuid)
+                    ? parsedGuid
+                    : new Guid(System.Security.Cryptography.MD5.HashData(System.Text.Encoding.UTF8.GetBytes(activity.ActivityId)));
+
+                decimal feeAmount = activity.NetAmount.HasValue 
+                    ? Math.Abs(activity.NetAmount.Value) 
+                    : (activity.Price.HasValue ? Math.Abs(activity.Price.Value) : 0);
+                    
+                if (feeAmount == 0) continue;
+
+                feeDistributions.Add(new FSProfitDistribution
+                {
+                    Id = id,
+                    FSUserId = userId,
+                    Amount = feeAmount,
+                    DistributionType = ProfitDistributionType.BrokerFee,
+                    Date = activity.ActivityDateTimeUtc
+                });
+            }
+
+            return feeDistributions;
         }
     }
 }

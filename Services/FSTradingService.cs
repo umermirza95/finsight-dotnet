@@ -425,16 +425,26 @@ namespace Finsight.Services
         {
             var q = _dbContext.FSProfitDistributions.Where(d => d.FSUserId == userId);
 
-            if (query.StartDate.HasValue)
-                q = q.Where(d => d.Date >= query.StartDate.Value);
+            var startDate = query.StartDate;
+            var endDate = query.EndDate;
 
-            if (query.EndDate.HasValue)
-                q = q.Where(d => d.Date <= query.EndDate.Value);
+            if (!startDate.HasValue && !endDate.HasValue)
+            {
+                var today = DateTime.UtcNow.Date;
+                startDate = new DateTime(today.Year, today.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+                endDate = today.AddDays(1).AddTicks(-1);
+            }
+
+            if (startDate.HasValue)
+                q = q.Where(d => d.Date >= startDate.Value);
+
+            if (endDate.HasValue)
+                q = q.Where(d => d.Date <= endDate.Value);
 
             if (query.DistributionType.HasValue)
                 q = q.Where(d => d.DistributionType == query.DistributionType.Value);
 
-            var distributions = await q.OrderByDescending(d => d.Date).Take(10).ToListAsync();
+            var distributions = await q.OrderByDescending(d => d.Date).ToListAsync();
 
             return distributions.Select(d => new ProfitDistributionDTO
             {
@@ -559,6 +569,29 @@ namespace Finsight.Services
 
             await _brokerService.PlaceLimitOrderAsync(userId, targetTicker, TradeDirection.BUY, targetBuyPrice, shares);
             await _brokerService.PlaceLimitOrderAsync(userId, targetTicker, TradeDirection.SELL, targetSellPrice, mostRecentBuyTrade.Quantity);
+        }
+
+        public async Task SyncBrokerFeeAsync(string userId)
+        {
+            var brokerFees = await _brokerService.FetchBrokerFeesAsync(userId);
+            
+            if (brokerFees == null || !brokerFees.Any())
+                return;
+
+            var existingIds = await _dbContext.FSProfitDistributions
+                .Where(d => d.FSUserId == userId && d.DistributionType == ProfitDistributionType.BrokerFee)
+                .Select(d => d.Id)
+                .ToListAsync();
+
+            var existingIdsSet = new HashSet<Guid>(existingIds);
+            var newFees = brokerFees.Where(f => !existingIdsSet.Contains(f.Id)).ToList();
+
+            if (newFees.Any())
+            {
+                _dbContext.FSProfitDistributions.AddRange(newFees);
+                await _dbContext.SaveChangesAsync();
+                _logger.LogInformation($"Inserted {newFees.Count} new broker fees for user {userId}.");
+            }
         }
     }
 }

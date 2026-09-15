@@ -40,7 +40,8 @@ namespace Finsight.Enums
     {
         Insurance,
         Withdrawal,
-        Reinvestment
+        Reinvestment,
+        BrokerFee
     }
 
     public enum BrokerType
