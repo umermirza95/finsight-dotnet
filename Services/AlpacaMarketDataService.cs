@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Finsight.Interfaces;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace Finsight.Services
 {
@@ -13,11 +14,13 @@ namespace Finsight.Services
     {
         private readonly HttpClient _httpClient;
         private readonly IConfiguration _configuration;
+        private readonly ILogger<AlpacaMarketDataService> _logger;
 
-        public AlpacaMarketDataService(HttpClient httpClient, IConfiguration configuration)
+        public AlpacaMarketDataService(HttpClient httpClient, IConfiguration configuration, ILogger<AlpacaMarketDataService> logger)
         {
             _httpClient = httpClient;
             _configuration = configuration;
+            _logger = logger;
         }
 
         public async Task<Dictionary<string, decimal>> GetPricesAsync(IEnumerable<string> tickers)
@@ -44,6 +47,8 @@ namespace Finsight.Services
                 var response = await _httpClient.SendAsync(request);
                 if (!response.IsSuccessStatusCode)
                 {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    _logger.LogError("Alpaca API error. Status Code: {StatusCode}, Content: {ErrorContent}", response.StatusCode, errorContent);
                     return distinctTickers.ToDictionary(t => t, t => 0m);
                 }
 
@@ -75,8 +80,9 @@ namespace Finsight.Services
 
                 return result;
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogError(ex, "An error occurred while fetching prices from Alpaca API");
                 return distinctTickers.ToDictionary(t => t, t => 0m);
             }
         }

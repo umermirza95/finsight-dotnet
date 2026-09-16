@@ -158,6 +158,7 @@ namespace Finsight.Services
         public async Task<List<OpenTradeDTO>> GetOpenTradesAsync(string userId)
         {
             var trades = await _dbContext.FSTrades
+                .Where(t=> t.Ticker != "USDT/USD")
                 .Where(t => t.FSUserId == userId
                 && (!_dbContext.FSClosedTrades.Any(c => c.OrderOpenId == t.ExternalId || c.OrderCloseId == t.ExternalId)) || t.SharesLeft > 0)
                 .OrderByDescending(t => t.Date)
