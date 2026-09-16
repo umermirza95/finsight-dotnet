@@ -20,12 +20,14 @@ namespace Finsight.Services
         private readonly AppDbContext _dbContext;
         private readonly IConfiguration _configuration;
         private readonly ILogger<FSAlpacaTradingService> _logger;
+        private readonly AlpacaConnectionManager _connectionManager;
 
-        public FSAlpacaTradingService(HttpClient httpClient, AppDbContext dbContext, IConfiguration configuration, ILogger<FSAlpacaTradingService> logger)
+        public FSAlpacaTradingService(HttpClient httpClient, AppDbContext dbContext, IConfiguration configuration, ILogger<FSAlpacaTradingService> logger, AlpacaConnectionManager connectionManager)
         {
             _dbContext = dbContext;
             _configuration = configuration;
             _logger = logger;
+            _connectionManager = connectionManager;
         }
 
         private async Task<IAlpacaTradingClient> GetAlpacaClientAsync(string userId)
@@ -42,16 +44,17 @@ namespace Finsight.Services
 
         public bool IsConnected(string userId)
         {
-            return true;
+            return _connectionManager.IsConnected(userId);
         }
 
-        public Task ConnectAsync(string host, int port, int clientId, string userId)
+        public async Task ConnectAsync(string host, int port, int clientId, string userId)
         {
-            return Task.CompletedTask;
+            await _connectionManager.ConnectManualAsync(userId);
         }
 
         public void Disconnect(string userId)
         {
+            _connectionManager.DisconnectUser(userId);
         }
 
         public async Task PlaceLimitOrderAsync(string userId, string ticker, TradeDirection direction, decimal limitPrice, decimal quantity, string? account = null)

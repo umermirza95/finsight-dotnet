@@ -83,6 +83,7 @@ namespace Finsight.Services
 
                 client.OnTradeUpdate += (tradeUpdate) => HandleTradeUpdateAsync(userId, tradeUpdate);
                 client.OnError += (ex) => HandleError(userId, ex);
+                client.SocketClosed += () => HandleSocketClosed(userId);
 
                 var authStatus = await client.ConnectAndAuthenticateAsync(stoppingToken);
 
@@ -107,6 +108,21 @@ namespace Finsight.Services
         private void HandleError(string userId, Exception ex)
         {
             _logger.LogError(ex, $"Alpaca streaming client error for user {userId}. Attempting to reconnect.");
+
+            if (_clients.TryRemove(userId, out var client))
+            {
+                client.Dispose();
+            }
+
+            if (_configs.TryGetValue(userId, out var config))
+            {
+                _ = ScheduleReconnectAsync(userId, config.AlpacaApiKey!, config.AlpacaApiSecret!, CancellationToken.None);
+            }
+        }
+
+        private void HandleSocketClosed(string userId)
+        {
+            _logger.LogWarning($"Alpaca streaming client socket closed for user {userId}. Attempting to reconnect.");
 
             if (_clients.TryRemove(userId, out var client))
             {
@@ -195,6 +211,37 @@ namespace Finsight.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, $"Error handling trade update for user {userId}.");
+            }
+        }
+
+        public bool IsConnected(string userId)
+        {
+            return _clients.ContainsKey(userId);
+        }
+
+        public async Task ConnectManualAsync(string userId)
+        {
+            if (_clients.ContainsKey(userId))
+            {
+                return;
+            }
+
+            using var scope = _scopeFactory.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var config = await dbContext.TradingConfigs.FirstOrDefaultAsync(c => c.FSUserId == userId);
+
+            if (config != null && !string.IsNullOrEmpty(config.AlpacaApiKey) && !string.IsNullOrEmpty(config.AlpacaApiSecret))
+            {
+                _configs[userId] = config;
+                await ConnectUserAsync(userId, config.AlpacaApiKey, config.AlpacaApiSecret, CancellationToken.None);
+            }
+        }
+
+        public void DisconnectUser(string userId)
+        {
+            if (_clients.TryRemove(userId, out var client))
+            {
+                _ = client.DisconnectAsync(CancellationToken.None).ContinueWith(_ => client.Dispose());
             }
         }
 

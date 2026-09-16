@@ -42,7 +42,8 @@ builder.Services.AddScoped<ITradingService, FSTradingService>();
 builder.Services.AddHttpClient<IMarketDataService, AlpacaMarketDataService>();
 builder.Services.AddHttpClient<IMessagingService, SlackMessagingService>();
 
-builder.Services.AddHostedService<AlpacaConnectionManager>();
+builder.Services.AddSingleton<AlpacaConnectionManager>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<AlpacaConnectionManager>());
 
 builder.Logging.AddOpenTelemetry(logging =>
 {
