@@ -77,8 +77,7 @@ namespace Finsight.Services
                 && (!_dbContext.FSClosedTrades.Any(c => c.OrderOpenId == t.ExternalId || c.OrderCloseId == t.ExternalId) || t.SharesLeft > 0))
                 .ToListAsync();
 
-        
-
+            var config = await GetTradingConfigAsync(userId);
             var newClosedTrades = new List<FSClosedTrade>();
             var groupedByTicker = unclosedTrades.GroupBy(t => t.Ticker);
 
@@ -124,6 +123,20 @@ namespace Finsight.Services
                             };
                             closedTrade.CalculateNetProfit(matchedBuy, sell, matchedQuantity);
                             newClosedTrades.Add(closedTrade);
+
+                            if (closedTrade.NetProfit > 0 && config?.InsuranceWithold.HasValue == true && config.InsuranceWithold.Value > 0)
+                            {
+                                var withholdAmount = closedTrade.NetProfit * (config.InsuranceWithold.Value / 100m);
+                                var distribution = new FSProfitDistribution
+                                {
+                                    Id = Guid.NewGuid(),
+                                    FSUserId = userId,
+                                    Amount = Math.Round(withholdAmount, 2),
+                                    DistributionType = ProfitDistributionType.Insurance,
+                                    Date = DateTime.UtcNow
+                                };
+                                _dbContext.FSProfitDistributions.Add(distribution);
+                            }
 
                             // Remove matched buy if it's fully matched so it's not matched again
                             if (matchedBuy.SharesLeft == 0)
@@ -290,6 +303,7 @@ namespace Finsight.Services
             if (dto.DistancePerTranche.HasValue) config.DistancePerTranche = dto.DistancePerTranche.Value;
             if (dto.ServerIp != null) config.ServerIp = dto.ServerIp;
             if (dto.Ticker != null) config.Ticker = dto.Ticker;
+            config.InsuranceWithold = dto.InsuranceWithold;
 
             await _dbContext.SaveChangesAsync();
             return config;
@@ -297,6 +311,7 @@ namespace Finsight.Services
 
         public async Task ManualMatchTradesAsync(string userId, Finsight.Commands.ManualMatchCommand command)
         {
+            var config = await GetTradingConfigAsync(userId);
             var buyTrade = await _dbContext.FSTrades.FirstOrDefaultAsync(t => t.ExternalId == command.BuyOrderId && t.FSUserId == userId);
             var sellTrade = await _dbContext.FSTrades.FirstOrDefaultAsync(t => t.ExternalId == command.SellOrderId && t.FSUserId == userId);
 
@@ -372,6 +387,19 @@ namespace Finsight.Services
                     _dbContext.FSInsurancePayouts.Add(payout);
                     closedTrade.NetProfit += coveredAmount; // Adjust net profit
                 }
+            }
+            else if (closedTrade.NetProfit > 0 && config?.InsuranceWithold.HasValue == true && config.InsuranceWithold.Value > 0)
+            {
+                var withholdAmount = closedTrade.NetProfit * (config.InsuranceWithold.Value / 100m);
+                var distribution = new FSProfitDistribution
+                {
+                    Id = Guid.NewGuid(),
+                    FSUserId = userId,
+                    Amount = Math.Round(withholdAmount, 2),
+                    DistributionType = ProfitDistributionType.Insurance,
+                    Date = DateTime.UtcNow
+                };
+                _dbContext.FSProfitDistributions.Add(distribution);
             }
 
             _dbContext.FSClosedTrades.Add(closedTrade);

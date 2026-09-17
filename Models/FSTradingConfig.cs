@@ -38,5 +38,8 @@ namespace Finsight.Models
         public string? AlpacaApiSecret { get; set; }
         
         public string? Ticker { get; set; }
+
+        [Column(TypeName = "decimal(5,2)")]
+        public decimal? InsuranceWithold { get; set; }
     }
 }

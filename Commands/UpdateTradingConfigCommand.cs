@@ -11,5 +11,6 @@ namespace Finsight.Commands
         public decimal? DistancePerTranche { get; set; }
         public string? ServerIp { get; set; }
         public string? Ticker { get; set; }
+        public decimal? InsuranceWithold { get; set; }
     }
 }
