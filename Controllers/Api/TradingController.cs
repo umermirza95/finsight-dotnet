@@ -119,6 +119,56 @@ namespace Finsight.Controller
             }
         }
 
+        [HttpGet("monthly-profits")]
+        public async Task<IActionResult> GetMonthlyProfitsAsync([FromQuery] GetTradesQuery query)
+        {
+            try
+            {
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+                query.ApplyDefaultDateRange();
+
+                var closedTrades = await _tradingService.GetClosedTradesAsync(userId, query);
+                var profitDistributions = await _tradingService.GetProfitDistributionsAsync(userId, new GetProfitDistributionsQuery { StartDate = query.StartDate, EndDate = query.EndDate });
+
+                var earned = new decimal[12];
+                var kept = new decimal[12];
+
+                foreach (var trade in closedTrades)
+                {
+                    var monthIndex = trade.CloseDate.Month - 1;
+                    if (monthIndex >= 0 && monthIndex < 12)
+                    {
+                        earned[monthIndex] += trade.NetProfit;
+                        kept[monthIndex] += trade.NetProfit;
+                    }
+                }
+
+                foreach (var dist in profitDistributions)
+                {
+                    if (dist.DistributionType == Finsight.Enums.ProfitDistributionType.Insurance || dist.DistributionType == Finsight.Enums.ProfitDistributionType.BrokerFee)
+                    {
+                        var monthIndex = dist.Date.Month - 1;
+                        if (monthIndex >= 0 && monthIndex < 12)
+                        {
+                            kept[monthIndex] -= dist.Amount;
+                        }
+                    }
+                }
+
+                return Ok(new 
+                {
+                    earned = earned,
+                    kept = kept
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
 
         [HttpPost("connect")]
         public async Task<IActionResult> ConnectAsync([FromBody] Commands.ConnectCommand command, [FromServices] IBrokerService brokerService)
