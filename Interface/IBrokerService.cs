@@ -16,6 +16,7 @@ namespace Finsight.Interfaces
         Task ConnectAsync(string host, int port, int clientId, string userId);
         void Disconnect(string userId);
         Task PlaceLimitOrderAsync(string userId, string ticker, TradeDirection direction, decimal limitPrice, decimal quantity, string? account = null);
+        Task PlaceMarketOrderAsync(string userId, string ticker, TradeDirection direction, decimal quantity, string? account = null);
         Task<List<ActiveOrderDTO>> GetActiveOrdersAsync(string userId);
         Task AdjustOrderPriceAsync(string userId, AdjustOrderPriceCommand command);
         Task CancelOrderAsync(string userId, string permId);

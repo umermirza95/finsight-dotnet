@@ -77,6 +77,22 @@ namespace Finsight.Services
             await client.PostOrderAsync(request);
         }
 
+        public async Task PlaceMarketOrderAsync(string userId, string ticker, TradeDirection direction, decimal quantity, string? account = null)
+        {
+            var client = await GetAlpacaClientAsync(userId);
+            var orderSide = direction == TradeDirection.BUY ? OrderSide.Buy : OrderSide.Sell;
+
+            var request = new NewOrderRequest(
+                ticker,
+                OrderQuantity.Fractional(quantity),
+                orderSide,
+                OrderType.Market,
+                TimeInForce.Gtc
+            );
+
+            await client.PostOrderAsync(request);
+        }
+
         public async Task<List<ActiveOrderDTO>> GetActiveOrdersAsync(string userId)
         {
             var client = await GetAlpacaClientAsync(userId);

@@ -589,7 +589,8 @@ namespace Finsight.Services
 
             if (mostRecentBuyTrade == null)
             {
-                throw new InvalidOperationException("No recent open BUY order found to calculate limit prices.");
+                await _brokerService.PlaceMarketOrderAsync(userId, targetTicker, TradeDirection.BUY, shares);
+                return;
             }
 
             decimal distance = mostRecentBuyTrade.TradePrice * distancePercentage;

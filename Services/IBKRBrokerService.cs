@@ -128,6 +128,10 @@ namespace Finsight.Services
             return currentContent;
         }
 
+        public async Task PlaceMarketOrderAsync(string userId, string ticker, TradeDirection direction, decimal quantity, string? account = null)
+        {
+        }
+
         public async Task PlaceLimitOrderAsync(string userId, string ticker, TradeDirection direction, decimal limitPrice, decimal quantity, string? account = null)
         {
             if (!IsConnected(userId))
